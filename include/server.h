@@ -19,7 +19,7 @@ private:
   using HandlerMap = std::unordered_map<std::string, Handler>;
 
   IncomingClientQueue incomingClientQueue {};
-  std::array<HandlerMap, std::to_underlying(Request::HTTPMethod::NUM_HTTP_METHODS)> handlers {};
+  std::array<HandlerMap, std::to_underlying(HTTP::Request::Method::NUM_METHODS)> handlers {};
   int serverfd;
 
   void handover(int client);
@@ -32,7 +32,7 @@ public:
   Server& operator=(const Server&) = delete;
   Server& operator=(const Server&&) = delete;
 
-  void registerHandler(const std::string& endpoint, Request::HTTPMethod method, Handler handler);
+  void registerHandler(const std::string& endpoint, HTTP::Request::Method method, Handler handler);
 
   [[noreturn]]
   void go();

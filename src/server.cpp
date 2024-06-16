@@ -16,7 +16,7 @@ void Server::handover(int client) {
   incomingClientQueue.add(client);
 }
 
-void Server::registerHandler(const std::string& endpoint, Request::HTTPMethod method, Handler handler) {
+void Server::registerHandler(const std::string& endpoint, HTTP::Request::Method method, Handler handler) {
   handlers[std::to_underlying(method)][endpoint] = handler;
 }
 
