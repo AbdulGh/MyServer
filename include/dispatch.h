@@ -16,10 +16,13 @@ private:
   Server& parent;
   void dispatch(int client);
 
+  int epollfd {-1};
+
 public:
-  Dispatch(const Server&);
+  Dispatch(Server&);
   void work();
   void join();
+  ~Dispatch();
 };
 
 }

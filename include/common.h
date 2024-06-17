@@ -12,7 +12,7 @@ using Handler = std::function<std::string(Query)>;
 
 
 // the maximum number of bytes we will read/write from/to a client before continuing with the round robin
-constexpr size_t CHUNKSIZE = 2048;
+constexpr size_t CHUNKSIZE = 4096;
 
 }
 

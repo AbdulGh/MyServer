@@ -26,7 +26,8 @@ private:
     PARSE_BODY, NUM_STATES
   };
 
-  //this stuff is because I wanted the compiler to generate the switch(State) jump table... more fun than good software engineering
+  //this stuff is because I wanted the compiler to generate the state jump table w/ a sort of pattern matching
+  //more for fun than for good software engineering
   using StateActions = std::array<void(*)(RequestParser*, std::string_view), std::to_underlying(State::NUM_STATES)>;
   template <int i> static consteval void instantiateAction(StateActions& actions);
   static consteval StateActions generateActions(); 
@@ -38,13 +39,17 @@ private:
   std::string buffer {};
   std::string auxbuffer {}; // used for the v of kv 
   int count { 0 }; //used to count \r\n, etc 
+  bool error { false };
 
   static constexpr std::string_view httpnewline { "\r\n" };
-  void reset();
+
+  void commitAndContinue(std::string_view);
 
 public:
   RequestParser();
   void process(std::string_view input);
+  bool isError();
+  void reset();
   std::vector<Request> takeRequests();
 };
 

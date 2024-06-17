@@ -24,7 +24,7 @@ consteval std::string_view logLevelToString(LogLevel level){
 
 template <LogLevel level>
 std::ostream& greet(std::ostream& output) {
-  output << logLevelToString(level) << " (thread" << std::this_thread::get_id() << "): "; 
+  output << logLevelToString(level) << " (thread " << std::this_thread::get_id() << "): "; 
   return output;
 }
 
