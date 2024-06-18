@@ -1,3 +1,4 @@
+#include <csignal>
 #include <string>
 #include <cstring>
 #include <sys/types.h>
@@ -12,7 +13,7 @@
 namespace MyServer {
 
 void Server::handover(int client) {
-  Logger::log<Logger::LogLevel::INFO>("handing over client " + std::to_string(client));
+  Logger::log<Logger::LogLevel::INFO>("Handing over client " + std::to_string(client));
   incomingClientQueue.add(client);
 }
 
@@ -41,12 +42,10 @@ void Server::go() {
 
   for (;;) {
     int client;
-
     if ((client = accept(serverfd, addressbp, reinterpret_cast<socklen_t*>(&addrlen))) < 0) {
       Logger::log<Logger::LogLevel::ERROR>("Couldn't accept a client");
       continue;
     }
-
     handover(client);
   }
 }

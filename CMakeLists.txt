@@ -5,7 +5,7 @@ project(server)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_BUILD_TYPE Debug)
 
-add_library(mainlib src/parseHTTP.cpp src/server.cpp src/incomingClientQueue.cpp src/dispatch.cpp)
+add_library(mainlib src/parseHTTP.cpp src/server.cpp src/incomingClientQueue.cpp src/dispatch.cpp src/client.cpp)
 target_include_directories(mainlib PUBLIC include)
 
 add_executable(main main.cpp)

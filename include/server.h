@@ -2,20 +2,21 @@
 #define SERVER_H
 
 #include <string>
+#include <sys/epoll.h>
 #include <utility>
 
+#include "dispatch.h"
 #include "common.h"
 #include "incomingClientQueue.h"
 #include "parseHTTP.h"
 
 namespace MyServer {
 
-constexpr int threadPoolSize = 5;
+constexpr int numDispatchThreads = 2;
+constexpr int threadPoolSize = 4;
 
 class Server {
 private:
-  class Dispatch;
-
   using HandlerMap = std::unordered_map<std::string, Handler>;
 
   IncomingClientQueue incomingClientQueue {};
@@ -24,9 +25,18 @@ private:
 
   void handover(int client);
 
+  template<size_t...Is>
+  std::array<Dispatch, sizeof...(Is)> makeDispatchThreads(std::index_sequence<Is...>) {
+    return { ((void)Is, Dispatch{incomingClientQueue})... };
+  }
+  std::array<Dispatch, numDispatchThreads> makeDispatchThreads() {
+    return makeDispatchThreads(std::make_index_sequence<numDispatchThreads>());
+  }
+  std::array<Dispatch, numDispatchThreads> dispatchThreads;
+
 public:
   static constexpr int port = 8080;
-  Server() = default;
+  Server(): dispatchThreads{makeDispatchThreads()} {}
   Server(const Server&) = delete;
   Server(const Server&&) = delete;
   Server& operator=(const Server&) = delete;
