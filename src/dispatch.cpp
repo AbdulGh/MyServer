@@ -1,3 +1,4 @@
+#include <cstring>
 #include <string>
 #include <sys/epoll.h>
 #include <unistd.h>
@@ -11,7 +12,7 @@
 namespace MyServer {
 
 Dispatch::Dispatch(IncomingClientQueue& incomingClientQueue): incomingClients{incomingClientQueue} {
-  int epollfd = insist(epoll_create1(0), "Couldn't create epoll");
+  epollfd = insist(epoll_create1(0), "Couldn't create epoll");
   mThread = std::thread(&Dispatch::work, this);
 }
 
@@ -19,7 +20,7 @@ void Dispatch::work() {
   for(;;) {
     //take new clients
     if (clients.empty()) incomingClients.wait();
-    if (int client = incomingClients.take() >= 0) {
+    if (int client; (client = incomingClients.take()) >= 0) {
       assumeClient(client);
     }
 
@@ -38,16 +39,18 @@ void Dispatch::work() {
 
       epoll_event& event = notificationIt->second;
       if ((event.events & EPOLLIN) && !(event.events & EPOLLRDHUP)) {
-        Logger::log<Logger::LogLevel::INFO>("read in notification!");
         Client::IOState result = client.handleRead();
         switch (result) {
           default:
             std::unreachable();
           case Client::IOState::ERROR:
+            std::cout << "error\n";
             //todo let them know
           case Client::IOState::CLOSE:
-            client.close();
+            std::cout << "close\n";
+            // client.close();
           case Client::IOState::WOULDBLOCK:
+            std::cout << "block\n";
             event.events ^= EPOLLIN;
           case Client::IOState::CONTINUE:
             break;
@@ -62,7 +65,7 @@ void Dispatch::work() {
           case Client::IOState::ERROR:
             //todo let them know
           case Client::IOState::CLOSE:
-            client.close();
+            // client.close();
           case Client::IOState::WOULDBLOCK:
             event.events ^= EPOLLOUT;
           case Client::IOState::CONTINUE:

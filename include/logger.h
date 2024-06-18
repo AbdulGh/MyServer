@@ -2,6 +2,7 @@
 #define LOGGER_H
 
 #include <csignal>
+#include <cstring>
 #include <string>
 #include <array>
 #include <thread>
@@ -37,14 +38,16 @@ inline void log(const std::string& message) {
 template <>
 inline void log<LogLevel::ERROR>(const std::string& message) {
   greet<LogLevel::ERROR>(std::cerr);
-  std::cerr << message << "\n";
+  std::cerr << message;
+  std::cerr << " (last error: " << strerror(errno) << " (" << errno << "))\n";
 }
 
 template <>
 inline void log<LogLevel::FATAL>(const std::string& message) {
   std::cout.flush();
   greet<LogLevel::FATAL>(std::cerr);
-  std::cerr << message << "\n";
+  std::cerr << message;
+  std::cerr << " (last error: " << strerror(errno) << " (" << errno << "))\n";
   std::cerr << "Fatal message recieved, shutting down...";
   raise(SIGINT);
 }

@@ -40,8 +40,8 @@ void Server::go() {
 
   Logger::log<Logger::LogLevel::INFO>("Server listening on port " + std::to_string(Server::port));
 
+  int client;
   for (;;) {
-    int client;
     if ((client = accept(serverfd, addressbp, reinterpret_cast<socklen_t*>(&addrlen))) < 0) {
       Logger::log<Logger::LogLevel::ERROR>("Couldn't accept a client");
       continue;

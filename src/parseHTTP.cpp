@@ -212,11 +212,13 @@ template <>
 consteval void RequestParser::instantiateAction<-1>(StateActions&) {
   return;
 }
+
 template <int i> 
 consteval void RequestParser::instantiateAction(StateActions& actions) {
   actions[i] = &RequestParser::processHelper<static_cast<RequestParser::State>(i)>;
   instantiateAction<i - 1>(actions);
 }
+
 consteval RequestParser::StateActions RequestParser::generateActions() {
   StateActions actions {};
   instantiateAction<std::to_underlying(RequestParser::State::NUM_STATES) - 1>(actions);
