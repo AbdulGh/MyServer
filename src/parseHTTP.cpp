@@ -28,67 +28,67 @@ bool RequestParser::isError() {
 
 /* State machine goes here */
 template <RequestParser::State s>
-void RequestParser::processHelper(RequestParser*, std::string_view) {
+void RequestParser::processHelper(std::string_view) {
   Logger::log<Logger::LogLevel::FATAL>("RequestParser entered some weird state");
 }
 
 template <>
-void RequestParser::processHelper<RequestParser::State::PARSE_METHOD>(RequestParser* self, std::string_view input) {
+void RequestParser::processHelper<RequestParser::State::PARSE_METHOD>(std::string_view input) {
   int head = 0;
-  while (head < input.size() && input[head] != ' ') self->buffer += input[head++];
+  while (head < input.size() && input[head] != ' ') buffer += input[head++];
   if (head < input.size() && input[head] == ' ') {
-    if (self->buffer == "GET") self->currentRequest.method = Request::Method::GET;
-    else if (self->buffer == "POST") self->currentRequest.method = Request::Method::POST;
+    if (buffer == "GET") currentRequest.method = Request::Method::GET;
+    else if (buffer == "POST") currentRequest.method = Request::Method::POST;
     else {
-      Logger::log<Logger::LogLevel::ERROR>("Parsed this unsupported method: " + self->buffer);
-      self->error = true;
+      Logger::log<Logger::LogLevel::ERROR>("Parsed this unsupported method: " + buffer);
+      error = true;
     }
-    self->buffer = "";
-    self->state = RequestParser::State::PARSE_ENDPOINT;
-    self->process(input.substr(head + 1));
+    buffer = "";
+    state = RequestParser::State::PARSE_ENDPOINT;
+    process(input.substr(head + 1));
   }
 }
 
 template <>
-void RequestParser::processHelper<RequestParser::State::PARSE_ENDPOINT>(RequestParser* self, std::string_view input) {
+void RequestParser::processHelper<RequestParser::State::PARSE_ENDPOINT>(std::string_view input) {
   int head = 0;
-  while (head < input.size() && input[head] != ' ' && input[head] != '?') self->buffer += input[head++];
+  while (head < input.size() && input[head] != ' ' && input[head] != '?') buffer += input[head++];
 
   if (head < input.size()) {
     if (input[head] == ' ') {
-      self->currentRequest.endpoint = std::exchange(self->buffer, "");
-      self->state = RequestParser::State::FIND_HEADERS;
-      self->process(input.substr(head + 1));
+      currentRequest.endpoint = std::exchange(buffer, "");
+      state = RequestParser::State::FIND_HEADERS;
+      process(input.substr(head + 1));
     }
     else if (input[head] == '?') {
-      self->currentRequest.endpoint = std::exchange(self->buffer, "");
-      self->state = RequestParser::State::PARSE_QUERY_KEY;
-      self->process(input.substr(head + 1));
+      currentRequest.endpoint = std::exchange(buffer, "");
+      state = RequestParser::State::PARSE_QUERY_KEY;
+      process(input.substr(head + 1));
     }
-    // else we just continue in this self->state
+    // else we just continue in this state
   }
 }
 
 template <>
-void RequestParser::processHelper<RequestParser::State::FIND_HEADERS>(RequestParser* self, std::string_view input) {
+void RequestParser::processHelper<RequestParser::State::FIND_HEADERS>(std::string_view input) {
   int head = 0;
   while (head < input.size()) {
-    if (input[head] != RequestParser::httpnewline[self->count & 1]) {
-      if (self->count == 2) {
-        self->count = 0;
-        self->state = RequestParser::State::PARSE_HEADER_KEY;
-        self->process(input.substr(head));
+    if (input[head] != RequestParser::httpnewline[count & 1]) {
+      if (count == 2) {
+        count = 0;
+        state = RequestParser::State::PARSE_HEADER_KEY;
+        process(input.substr(head));
         return;
       }
-      else self->count = 0;
+      else count = 0;
     }
     else {
-      ++self->count;
-      if (self->count == 4) {
+      ++count;
+      if (count == 4) {
         //no more headers
-        self->count = 0;
-        self->state = RequestParser::State::FIND_BODY;
-        self->process(input.substr(head + 1));
+        count = 0;
+        state = RequestParser::State::FIND_BODY;
+        process(input.substr(head + 1));
         return;
       }
     }
@@ -98,80 +98,80 @@ void RequestParser::processHelper<RequestParser::State::FIND_HEADERS>(RequestPar
 }
 
 template <>
-void RequestParser::processHelper<RequestParser::State::PARSE_QUERY_KEY>(RequestParser* self, std::string_view input) {
+void RequestParser::processHelper<RequestParser::State::PARSE_QUERY_KEY>(std::string_view input) {
   int head = 0;
-  while (head < input.size() && input[head] != ' ' && input[head] != '=') self->buffer += input[head++];
+  while (head < input.size() && input[head] != ' ' && input[head] != '=') buffer += input[head++];
   if (head < input.size() && input[head] == '=') {
-    self->state = RequestParser::State::PARSE_QUERY_VALUE;
-    self->process(input.substr(head + 1));
+    state = RequestParser::State::PARSE_QUERY_VALUE;
+    process(input.substr(head + 1));
   }
 }
 
 template <>
-void RequestParser::processHelper<RequestParser::State::PARSE_QUERY_VALUE>(RequestParser* self, std::string_view input) {
+void RequestParser::processHelper<RequestParser::State::PARSE_QUERY_VALUE>(std::string_view input) {
   int head = 0;
-  while (head < input.size() && input[head] != ' ' && input[head] != '&' && input[head] != ' ') self->auxbuffer += input[head++];
+  while (head < input.size() && input[head] != ' ' && input[head] != '&' && input[head] != ' ') auxbuffer += input[head++];
   if (head < input.size()) {
     if (input[head] == '&') {
       //take more queries
-      self->currentRequest.query[std::exchange(self->buffer, "")] = std::exchange(self->auxbuffer, "");
-      self->state = RequestParser::State::PARSE_QUERY_KEY;
-      self->process(input.substr(head + 1));
+      currentRequest.query[std::exchange(buffer, "")] = std::exchange(auxbuffer, "");
+      state = RequestParser::State::PARSE_QUERY_KEY;
+      process(input.substr(head + 1));
     }
     else if (input[head] == ' ') {
-      self->currentRequest.query[std::exchange(self->buffer, "")] = std::exchange(self->auxbuffer, "");
-      self->state = RequestParser::State::FIND_HEADERS;
-      self->process(input.substr(head + 1));
+      currentRequest.query[std::exchange(buffer, "")] = std::exchange(auxbuffer, "");
+      state = RequestParser::State::FIND_HEADERS;
+      process(input.substr(head + 1));
     }
   }
 }
 
 template <>
-void RequestParser::processHelper<RequestParser::State::PARSE_HEADER_KEY>(RequestParser* self, std::string_view input) {
+void RequestParser::processHelper<RequestParser::State::PARSE_HEADER_KEY>(std::string_view input) {
   int head = 0;
-  while (head < input.size() && input[head] != ':') self->buffer += input[head++];
+  while (head < input.size() && input[head] != ':') buffer += input[head++];
   if (head < input.size() && input[head] == ':') {
-    self->state = RequestParser::State::PARSE_HEADER_VALUE;
-    self->process(input.substr(head + 1));
+    state = RequestParser::State::PARSE_HEADER_VALUE;
+    process(input.substr(head + 1));
   }
 }
 
 template <>
-void RequestParser::processHelper<RequestParser::State::PARSE_HEADER_VALUE>(RequestParser* self, std::string_view input) {
+void RequestParser::processHelper<RequestParser::State::PARSE_HEADER_VALUE>(std::string_view input) {
   int head = 0;
-  while (head < input.size() && self->count < 2) {
+  while (head < input.size() && count < 2) {
     //newline symbols cannot be part of the value anyway
-    if (input[head] == RequestParser::httpnewline[self->count]) ++self->count;
+    if (input[head] == RequestParser::httpnewline[count]) ++count;
     else {
-      self->auxbuffer += input[head];
-      self->count = 0;
+      auxbuffer += input[head];
+      count = 0;
     }
     ++head;
   }
 
-  if (self->count == 2) {
+  if (count == 2) {
     //HTTP standard requires we remove trailing whitespace from header values...
     //Would be better to not take the spaces at the front, but would need an extra TAKE_SPACE state
     int l = 0;
-    while (l < self->auxbuffer.size() && std::isspace(self->auxbuffer[l])) ++l;
-    int r = self->auxbuffer.size() - 1;
-    while (r > l && std::isspace(self->auxbuffer[r])) --r;
-    self->auxbuffer = self->auxbuffer.substr(l, r - l + 1);
-    self->currentRequest.headers[std::exchange(self->buffer, "")] = std::exchange(self->auxbuffer, "");
+    while (l < auxbuffer.size() && std::isspace(auxbuffer[l])) ++l;
+    int r = auxbuffer.size() - 1;
+    while (r > l && std::isspace(auxbuffer[r])) --r;
+    auxbuffer = auxbuffer.substr(l, r - l + 1);
+    currentRequest.headers[std::exchange(buffer, "")] = std::exchange(auxbuffer, "");
     
     //purposefully do not reset count, so FIND_HEADERS knows if it's found the next header or the body
-    self->state = RequestParser::State::FIND_HEADERS;
-    self->process(input.substr(head));
+    state = RequestParser::State::FIND_HEADERS;
+    process(input.substr(head));
   }
 }
 
 template <>
-void RequestParser::processHelper<RequestParser::State::FIND_BODY>(RequestParser* self, std::string_view input) {
-  //if there is no Content-Length, we expect no body, and we entered this self->state after seeing the \r\n\r\n - we are done!
-  auto it = self->currentRequest.headers.find("Content-Length");
+void RequestParser::processHelper<RequestParser::State::FIND_BODY>(std::string_view input) {
+  //if there is no Content-Length, we expect no body, and we entered this state after seeing the \r\n\r\n - we are done!
+  auto it = currentRequest.headers.find("Content-Length");
 
-  if (it == self->currentRequest.headers.end() || it->second == "0") {
-    self->commitAndContinue(input);
+  if (it == currentRequest.headers.end() || it->second == "0") {
+    commitAndContinue(input);
   }
   else {
     long contentLength = 0;
@@ -186,24 +186,24 @@ void RequestParser::processHelper<RequestParser::State::FIND_BODY>(RequestParser
 
     if (contentLength == -1) {
       Logger::log<Logger::LogLevel::ERROR>("Client sent non-numeric Content-Length: " + it->second);
-      self->error = true;
+      error = true;
     }
     else {
-      self->buffer.reserve(contentLength);
-      self->count = contentLength;
+      buffer.reserve(contentLength);
+      count = contentLength;
     }
-    self->state = RequestParser::State::PARSE_BODY;
-    self->process(input);
+    state = RequestParser::State::PARSE_BODY;
+    process(input);
   }
 }
 
 template <>
-void RequestParser::processHelper<RequestParser::State::PARSE_BODY>(RequestParser* self, std::string_view input) {
+void RequestParser::processHelper<RequestParser::State::PARSE_BODY>(std::string_view input) {
   int head = 0;
-  while (head < input.size() && self->count-- > 0) self->buffer += input[head++]; 
-  if (self->count <= 0) {
-    self->currentRequest.body = std::move(self->buffer);
-    self->commitAndContinue(input.substr(head));
+  while (head < input.size() && count-- > 0) buffer += input[head++]; 
+  if (count <= 0) {
+    currentRequest.body = std::move(buffer);
+    commitAndContinue(input.substr(head));
   }
 }
 
@@ -225,7 +225,7 @@ consteval RequestParser::StateActions RequestParser::generateActions() {
 
 void RequestParser::process(std::string_view input) {
   static constexpr StateActions actions = RequestParser::generateActions();
-  return actions[std::to_underlying(state)](this, input);
+  return (this->*actions[std::to_underlying(state)])(input);
 }
 
 std::vector<Request> RequestParser::takeRequests() {
