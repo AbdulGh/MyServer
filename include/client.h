@@ -1,10 +1,10 @@
 #ifndef CLIENT_H
 #define CLIENT_H
 
+#include <atomic>
 #include <mutex>
 #include <queue>
 #include <string>
-#include <utility>
 
 #include "parseHTTP.h"
 
@@ -18,6 +18,7 @@ private:
   std::queue<std::string> outgoing;
   int written {0};
   int fd {-1};
+  std::atomic<int> pending {0};
 
 public:
   enum class IOState { CONTINUE, CLOSE, ERROR, WOULDBLOCK };
@@ -36,12 +37,9 @@ public:
 
   void close();
   bool closed();
+  bool isPending();
   
-  void addOutgoing(std::string&& outboundStr) {
-    std::lock_guard<std::mutex> lock(queueMutex);
-    outgoing.push(std::move(outboundStr));
-  }
-
+  void addOutgoing(std::string&& outboundStr);
 
   ~Client();
 };

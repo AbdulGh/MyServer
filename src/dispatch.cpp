@@ -79,10 +79,13 @@ void Dispatch::work() {
       for (Request& request: client.takeRequests()){
         dispatchRequest(request, client);
       }
-      
+
+      if (event.events & EPOLLHUP || (event.events & EPOLLRDHUP) && !client.isPending()) {
+        clients.erase(clientIt);
+      }
+
       if (!(event.events & (EPOLLIN | EPOLLOUT))) {
         notificationIt = pending.erase(notificationIt);
-        if (client.closed()) clients.erase(clientIt);
       }
       else ++notificationIt;
     }
