@@ -10,11 +10,12 @@
 #include "common.h"
 #include "logger.h"
 #include "concurrentQueue.h"
+#include "task.h"
 
 namespace MyServer {
 
 void Server::handover(int client) {
-  Logger::log<Logger::LogLevel::INFO>("Handing over client " + std::to_string(client));
+  Logger::log<Logger::LogLevel::DEBUG>("Handing over client " + std::to_string(client));
   incomingClientQueue.add(client);
 }
 
@@ -63,6 +64,34 @@ std::array<Dispatch, numDispatchThreads> Server::makeDispatchThreads(std::index_
   
 std::array<Dispatch, numDispatchThreads> Server::makeDispatchThreads() {
   return makeDispatchThreads(std::make_index_sequence<numDispatchThreads>());
+}
+
+void Server::worker(Task task) {
+  Logger::log<Logger::LogLevel::DEBUG>("Starting up a worker thread");
+  ++numWorkerThreads;
+  //todo request stop
+  while (true) {
+    Response result;
+
+    try {
+      result = task.handler(task.request);
+    }
+    catch (std::exception e) {
+      result = {
+        .statusCode = Response::StatusCode::INTERNAL_SERVER_ERROR,
+        .body = e.what()
+      };
+    }
+
+    task.destination->addOutgoing(result.toHTTPResponse());
+
+    if (std::optional<Task> taskOpt {taskQueue.take()})  {
+      task = std::move(*taskOpt);
+    }
+    else break;
+  }
+  Logger::log<Logger::LogLevel::DEBUG>("Shutting down a worker thread");
+  --numWorkerThreads;
 }
 
 }

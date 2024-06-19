@@ -13,12 +13,14 @@ namespace MyServer {
 namespace Logger {
 
 enum class LogLevel {
-  FATAL, ERROR, WARN, INFO, DEBUG
+  OFF, FATAL, ERROR, WARN, INFO, DEBUG
 };
 
+constexpr LogLevel reportingLevel = LogLevel::DEBUG;
+
 consteval std::string_view logLevelToString(LogLevel level){
-  constexpr std::array<std::string_view, 5> LogLevelStr {
-    "FATAL", "ERROR", "WARN", "INFO", "DEBUG"
+  constexpr std::array<std::string_view, 6> LogLevelStr {
+    "MissingNo.", "FATAL", "ERROR", "WARN", "INFO", "DEBUG"
   };
   return LogLevelStr[std::to_underlying(level)];
 }
@@ -31,12 +33,14 @@ std::ostream& greet(std::ostream& output) {
 
 template <LogLevel level>
 inline void log(const std::string& message) {
+  if constexpr (std::to_underlying(reportingLevel) < std::to_underlying(level)) return;
   greet<level>(std::cout);
   std::cout << message << "\n";
 }
 
 template <>
 inline void log<LogLevel::ERROR>(const std::string& message) {
+  if constexpr (std::to_underlying(reportingLevel) < std::to_underlying(LogLevel::ERROR)) return;
   greet<LogLevel::ERROR>(std::cerr);
   std::cerr << message;
   std::cerr << " (last error: " << strerror(errno) << " (" << errno << "))\n";
@@ -44,6 +48,7 @@ inline void log<LogLevel::ERROR>(const std::string& message) {
 
 template <>
 inline void log<LogLevel::FATAL>(const std::string& message) {
+  if constexpr (std::to_underlying(reportingLevel) < std::to_underlying(LogLevel::FATAL)) return;
   std::cout.flush();
   greet<LogLevel::FATAL>(std::cerr);
   std::cerr << message;

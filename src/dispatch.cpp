@@ -20,7 +20,10 @@ Dispatch::Dispatch(Server* server): server {server} {
 void Dispatch::work() {
   for(;;) {
     //take new clients
-    if (clients.empty()) server->incomingClientQueue.wait();
+    if (clients.empty()) {
+      Logger::log<Logger::LogLevel::INFO>("Dispatch thread waiting for work");
+      server->incomingClientQueue.wait();
+    }
     if (std::optional<int> client; (client = server->incomingClientQueue.take())) {
       assumeClient(*client);
     }
@@ -39,6 +42,7 @@ void Dispatch::work() {
       Client& client = clientIt->second;
 
       epoll_event& event = notificationIt->second;
+
       if ((event.events & EPOLLIN) && !(event.events & EPOLLRDHUP)) {
         Client::IOState result = client.handleRead();
         switch (result) {
@@ -75,12 +79,12 @@ void Dispatch::work() {
         }
       }
 
-      //todo move this stuff
       for (Request& request: client.takeRequests()){
         dispatchRequest(request, client);
       }
 
       if (event.events & EPOLLHUP || (event.events & EPOLLRDHUP) && !client.isPending()) {
+        //achtung! todo! currently EPOLLHUP will crash worker threads...
         clients.erase(clientIt);
       }
 
@@ -134,8 +138,13 @@ void Dispatch::dispatchRequest(Request& request, Client& client) {
     Logger::log<Logger::LogLevel::DEBUG>("Couldn't find the handler");
   }
   else {
-    Response response = (handlerIt->second)(request);
-    client.addOutgoing(response.toHTTPResponse());
+    if (server->numWorkerThreads < threadPoolSize) {
+      std::thread(
+        &Server::worker,
+        server,
+        Task{.destination = &client, .request = std::move(request), .handler = handlerIt->second}
+      ).detach();
+    }
   }
 }
 
