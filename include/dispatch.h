@@ -2,27 +2,32 @@
 #define DISPATCH_H
 
 #include <sys/epoll.h>
+#include <thread>
 #include <unordered_map>
 
-#include "incomingClientQueue.h"
 #include "client.h"
 
 namespace MyServer {
+
+class Server;
+
 class Dispatch {
 private:
   static constexpr int EPOLL_EVENT_FLAGS = EPOLLIN | EPOLLOUT | EPOLLRDHUP;
   static constexpr int maxNotifications = 1000;
   epoll_event eventBuffer[maxNotifications];
+  Server* const server {nullptr};
 
-  std::thread mThread;
-  IncomingClientQueue& incomingClients;
+  std::thread thread;
+  //todo
   std::unordered_map<int, Client> clients {};
   std::unordered_map<int, epoll_event> pending {};
   int epollfd {-1};
 
-  void assumeClient(int client);
+  void assumeClient(const int client);
+  void dispatchRequest(Request& request, Client& destination);
 public:
-  Dispatch(IncomingClientQueue&);
+  Dispatch(Server* parent);
   void work();
   void join();
   ~Dispatch();

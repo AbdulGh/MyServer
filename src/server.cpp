@@ -9,6 +9,7 @@
 #include "server.h"
 #include "common.h"
 #include "logger.h"
+#include "concurrentQueue.h"
 
 namespace MyServer {
 
@@ -17,7 +18,8 @@ void Server::handover(int client) {
   incomingClientQueue.add(client);
 }
 
-void Server::registerHandler(const std::string& endpoint, HTTP::Request::Method method, Handler handler) {
+//todo check copies etc for std::function
+void Server::registerHandler(const std::string& endpoint, Request::Method method, Handler handler) {
   handlers[std::to_underlying(method)][endpoint] = handler;
 }
 
@@ -52,6 +54,15 @@ void Server::go() {
 
 void Server::stop() {
   close(serverfd);
+}
+
+template<size_t...Is>
+std::array<Dispatch, numDispatchThreads> Server::makeDispatchThreads(std::index_sequence<Is...>) {
+  return { ((void)Is, Dispatch{this})... };
+}
+  
+std::array<Dispatch, numDispatchThreads> Server::makeDispatchThreads() {
+  return makeDispatchThreads(std::make_index_sequence<numDispatchThreads>());
 }
 
 }

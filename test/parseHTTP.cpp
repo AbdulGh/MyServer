@@ -4,7 +4,7 @@
 #include <cassert>
 #include <iostream>
 
-using namespace MyServer::HTTP;
+using namespace MyServer;
 
 std::vector<std::string> requestDiff(const Request& a, const Request& b) {
   std::vector<std::string> diffs {};
@@ -50,7 +50,7 @@ int main()
   constexpr std::string_view getRequest 
     = "GET /?key1=valueA&key2=valueB HTTP/1.1\r\nHost: example.com    \r\nConnection: close\t\r\nContent-Length: 0\r\n\r\n";
 
-  RequestParser requestParser {};
+  HTTP::RequestParser requestParser {};
   requestParser.process(getRequest);
   std::vector<Request> requests = requestParser.takeRequests();
   assert(requests.size() == 1);

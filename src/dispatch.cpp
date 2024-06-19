@@ -1,27 +1,28 @@
 #include <cstring>
+#include <fcntl.h>
 #include <string>
 #include <sys/epoll.h>
 #include <unistd.h>
 #include <utility>
 
 #include "dispatch.h"
-#include "incomingClientQueue.h"
+#include "server.h"
 #include "logger.h"
 #include "client.h"
 
 namespace MyServer {
 
-Dispatch::Dispatch(IncomingClientQueue& incomingClientQueue): incomingClients{incomingClientQueue} {
+Dispatch::Dispatch(Server* server): server {server} {
   epollfd = insist(epoll_create1(0), "Couldn't create epoll");
-  mThread = std::thread(&Dispatch::work, this);
+  thread = std::thread(&Dispatch::work, this);
 }
 
 void Dispatch::work() {
   for(;;) {
     //take new clients
-    if (clients.empty()) incomingClients.wait();
-    if (int client; (client = incomingClients.take()) >= 0) {
-      assumeClient(client);
+    if (clients.empty()) server->incomingClientQueue.wait();
+    if (std::optional<int> client; (client = server->incomingClientQueue.take())) {
+      assumeClient(*client);
     }
 
     //process existing notifications
@@ -56,6 +57,7 @@ void Dispatch::work() {
             break;
         }
       }
+
       if (event.events & EPOLLOUT) {
         Client::IOState result = client.handleWrite();
         //todo deduplicate
@@ -71,6 +73,11 @@ void Dispatch::work() {
           case Client::IOState::CONTINUE:
             break;
         }
+      }
+
+      //todo move this stuff
+      for (Request& request: client.takeRequests()){
+        dispatchRequest(request, client);
       }
       
       if (!(event.events & (EPOLLIN | EPOLLOUT))) {
@@ -92,8 +99,14 @@ void Dispatch::work() {
 }
 
 void Dispatch::assumeClient(int clientfd) {
-  Logger::log<Logger::LogLevel::INFO>("Assuming client " + std::to_string(clientfd));
+  Logger::log<Logger::LogLevel::DEBUG>("Assuming client " + std::to_string(clientfd));
 
+  // set client as nonblocking
+  insist(
+    fcntl(clientfd, F_SETFL, insist(fcntl(clientfd, F_GETFL), "could not get file flags") | O_NONBLOCK),
+    "could not set file flags"
+  );
+   
   epoll_event event {
     .events = EPOLL_EVENT_FLAGS | EPOLLET,
     .data = { .fd = clientfd }
@@ -108,6 +121,19 @@ void Dispatch::assumeClient(int clientfd) {
     std::forward_as_tuple(clientfd)
   );
   //(https://devblogs.microsoft.com/oldnewthing/20231023-00/?p=108916)
+}
+
+void Dispatch::dispatchRequest(Request& request, Client& client) {
+  Logger::log<Logger::LogLevel::DEBUG>("Dispatching a request");
+  const HandlerMap& methodMap = server->handlers[std::to_underlying(request.method)];
+  auto handlerIt = methodMap.find(request.endpoint);
+  if (handlerIt == methodMap.end()) {
+    Logger::log<Logger::LogLevel::DEBUG>("Couldn't find the handler");
+  }
+  else {
+    Response response = (handlerIt->second)(request);
+    client.addOutgoing(response.toHTTPResponse());
+  }
 }
 
 Dispatch::~Dispatch() {

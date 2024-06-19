@@ -9,14 +9,6 @@
 namespace MyServer {
 namespace HTTP {
 
-struct Request {
-  enum class Method { GET, POST, NUM_METHODS };
-  Method method;
-  std::string endpoint;
-  Query query;
-  Query headers;
-  std::string body;
-};
 
 class RequestParser {
 private:

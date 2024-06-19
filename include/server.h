@@ -7,8 +7,8 @@
 
 #include "dispatch.h"
 #include "common.h"
-#include "incomingClientQueue.h"
-#include "parseHTTP.h"
+#include "concurrentQueue.h"
+#include "task.h"
 
 namespace MyServer {
 
@@ -17,21 +17,17 @@ constexpr int threadPoolSize = 4;
 
 class Server {
 private:
-  using HandlerMap = std::unordered_map<std::string, Handler>;
-
-  IncomingClientQueue incomingClientQueue {};
-  std::array<HandlerMap, std::to_underlying(HTTP::Request::Method::NUM_METHODS)> handlers {};
+  ConcurrentQueue<int> incomingClientQueue {};
+  ConcurrentQueue<Task> taskQueue {};
+  std::array<HandlerMap, std::to_underlying(Request::Method::NUM_METHODS)> handlers {};
   int serverfd;
 
   void handover(int client);
 
+  friend class Dispatch;
   template<size_t...Is>
-  std::array<Dispatch, sizeof...(Is)> makeDispatchThreads(std::index_sequence<Is...>) {
-    return { ((void)Is, Dispatch{incomingClientQueue})... };
-  }
-  std::array<Dispatch, numDispatchThreads> makeDispatchThreads() {
-    return makeDispatchThreads(std::make_index_sequence<numDispatchThreads>());
-  }
+  std::array<Dispatch, numDispatchThreads> makeDispatchThreads(std::index_sequence<Is...>);
+  std::array<Dispatch, numDispatchThreads> makeDispatchThreads();
   std::array<Dispatch, numDispatchThreads> dispatchThreads;
 
 public:
@@ -42,7 +38,7 @@ public:
   Server& operator=(const Server&) = delete;
   Server& operator=(const Server&&) = delete;
 
-  void registerHandler(const std::string& endpoint, HTTP::Request::Method method, Handler handler);
+  void registerHandler(const std::string& endpoint, Request::Method method, Handler handler);
 
   [[noreturn]]
   void go();
