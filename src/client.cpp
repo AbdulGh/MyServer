@@ -3,11 +3,17 @@
 #include "logger.h"
 #include "parseHTTP.h"
 #include <cerrno>
+#include <string>
 #include <string_view>
 #include <sys/socket.h>
 #include <unistd.h>
 
 namespace MyServer {
+
+template <Logger::LogLevel level>
+void Client::log(const std::string& str) {
+  Logger::log<level>("Client " + std::to_string(fd) + ": " + str);
+}
 
 Client::IOState Client::handleRead() {
   if (isClosing) return IOState::WOULDBLOCK;
@@ -19,7 +25,8 @@ Client::IOState Client::handleRead() {
       return IOState::WOULDBLOCK;
     }
     else {
-      Logger::log<Logger::LogLevel::ERROR>("Failed to read from the client");
+      log<Logger::LogLevel::ERROR>("Failed to read from the client");
+      errorOut();
       return IOState::ERROR;
     }
   }
@@ -49,10 +56,14 @@ Client::IOState Client::handleWrite() {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
           return IOState::WOULDBLOCK;
         }
-        else return IOState::ERROR;
+        else {
+          errorOut();
+          return IOState::ERROR;
+        }
       }
       else if (bytesOut == 0) {
-        //todo clarify this case - should do something to not spin
+        //todo what does this case actually mean?
+        errorOut();
         return IOState::ERROR;
       }
 
@@ -75,8 +86,9 @@ Client::IOState Client::handleWrite() {
 
 void Client::addOutgoing(std::string&& outboundStr) {
   std::lock_guard<std::mutex> lock(queueMutex);
-  --pending;
+  if (isErrored) return;
   outgoing.push(std::move(outboundStr));
+  --pending;
 }
 
 bool Client::isPending() {
@@ -86,19 +98,25 @@ bool Client::isPending() {
 
 void Client::close() {
   if (fd < 0) {
-    Logger::log<Logger::LogLevel::FATAL> ("(Application error) Tried to close a closed socket");
+    log<Logger::LogLevel::FATAL> ("(Application error) Tried to close a closed socket");
   }
   ::close(fd);
   fd = -1;
 }
 
-void Client::initiateShutdown() {
-  Logger::log<Logger::LogLevel::DEBUG>("Shutting down client");
-  isClosing = true;
+void Client::errorOut() {
+  log<Logger::LogLevel::ERROR>("Client error");
+  isErrored = true;
+  std::lock_guard<std::mutex> lock(queueMutex);
+  outgoing = {};
+  //todo - sometimes this is actually a 5xx...
+  outgoing.push("HTTP/1.1 400 Bad Request");
+  initiateShutdown();
 }
 
-bool Client::closing() {
-  return isClosing;
+void Client::initiateShutdown() {
+  log<Logger::LogLevel::DEBUG>("Initiating client shutdown");
+  isClosing = true;
 }
 
 std::vector<Request> Client::takeRequests() {
@@ -108,6 +126,7 @@ std::vector<Request> Client::takeRequests() {
 }
 
 Client::~Client() {
+  log<Logger::LogLevel::DEBUG>("Client shutdown complete");
   close();
 }
 

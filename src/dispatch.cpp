@@ -45,9 +45,7 @@ void Dispatch::work() {
       bool removeClient = false;
 
       if ((notifications & EPOLLIN) && !(notifications & EPOLLRDHUP)) {
-        Client::IOState result = client.handleRead();
-        if (result == Client::IOState::ERROR) client.initiateShutdown(); //todo
-        else if (result == Client::IOState::WOULDBLOCK) notifications ^= EPOLLIN;
+        if (client.handleRead() == Client::IOState::WOULDBLOCK) notifications ^= EPOLLIN;
       }
 
       for (Request& request: client.takeRequests()){
@@ -57,7 +55,7 @@ void Dispatch::work() {
       if (notifications & EPOLLOUT) {
         Client::IOState result = client.handleWrite();
         if (result == Client::IOState::CLOSE) {
-          notifications = 0;
+          notifications = 0u;
           removeClient = true;
         }
         else if (result == Client::IOState::WOULDBLOCK) notifications ^= EPOLLOUT;

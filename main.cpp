@@ -1,6 +1,4 @@
 #include "server.h"
-#include <chrono>
-#include <thread>
 
 int main()
 {
@@ -9,7 +7,7 @@ int main()
   server.registerHandler(
     "/echo", MyServer::Request::Method::POST,
     [](MyServer::Request& request) -> MyServer::Response  {
-      std::this_thread::sleep_for(std::chrono::milliseconds(500));
+      // std::this_thread::sleep_for(std::chrono::milliseconds(500));
       return {
         .statusCode = MyServer::Response::StatusCode::OK,
         .body = std::string("Server replies: ") + request.body

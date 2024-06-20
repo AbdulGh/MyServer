@@ -6,6 +6,7 @@
 #include <queue>
 #include <string>
 
+#include "logger.h"
 #include "parseHTTP.h"
 
 namespace MyServer {
@@ -19,9 +20,18 @@ private:
   int written {0};
   int fd {-1};
   std::atomic<int> pending {0};
-  bool isClosing { false };
+  bool isClosing {false};
+  bool isErrored {false};
   void close();
 
+  void errorOut();
+  void initiateShutdown();
+  bool closing();
+  bool isPending();
+
+  template <Logger::LogLevel level>
+  void log(const std::string&);
+  
 public:
   enum class IOState { CONTINUE, CLOSE, ERROR, WOULDBLOCK };
   Client(int fd): fd{fd} {};
@@ -36,10 +46,6 @@ public:
   Client(Client&) = delete;
   Client& operator=(Client&) = delete;
 
-  void initiateShutdown();
-  bool closing();
-  bool isPending();
-  
   void addOutgoing(std::string&& outboundStr);
 
   ~Client();

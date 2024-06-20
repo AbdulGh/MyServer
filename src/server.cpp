@@ -45,7 +45,8 @@ void Server::go() {
 
   int client;
   for (;;) {
-    if ((client = accept(serverfd, addressbp, reinterpret_cast<socklen_t*>(&addrlen))) < 0) {
+    client = accept(serverfd, addressbp, reinterpret_cast<socklen_t*>(&addrlen));
+    if (client < 0) {
       Logger::log<Logger::LogLevel::ERROR>("Couldn't accept a client");
       continue;
     }

@@ -57,7 +57,7 @@ inline void log<LogLevel::FATAL>(const std::string& message) {
   raise(SIGINT);
 }
 
-}
+} //namespace Logger
 
 [[maybe_unused]]
 inline int insist(int res, const std::string& message) {
