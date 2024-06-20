@@ -10,8 +10,10 @@
 namespace MyServer {
 
 Client::IOState Client::handleRead() {
+  if (isClosing) return IOState::WOULDBLOCK;
   char buf[CHUNKSIZE];
   ssize_t readBytes = read(fd, buf, CHUNKSIZE);
+
   if (readBytes < 0) {
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
       return IOState::WOULDBLOCK;
@@ -21,7 +23,11 @@ Client::IOState Client::handleRead() {
       return IOState::ERROR;
     }
   }
-  else if (readBytes == 0) return IOState::CLOSE;
+  else if (readBytes == 0) {
+    initiateShutdown();
+    return IOState::WOULDBLOCK;
+  }
+
   readState.process(std::string_view(buf, readBytes));
   if (readState.isError()) {
     readState.reset();
@@ -60,6 +66,10 @@ Client::IOState Client::handleWrite() {
     }
     queueMutex.unlock();
   }
+
+  if (pending == 0 && outgoing.empty()) {
+    return IOState::CLOSE;
+  }
   return IOState::CONTINUE;
 }
 
@@ -82,8 +92,13 @@ void Client::close() {
   fd = -1;
 }
 
-bool Client::closed() {
-  return fd < 0;
+void Client::initiateShutdown() {
+  Logger::log<Logger::LogLevel::DEBUG>("Shutting down client");
+  isClosing = true;
+}
+
+bool Client::closing() {
+  return isClosing;
 }
 
 std::vector<Request> Client::takeRequests() {

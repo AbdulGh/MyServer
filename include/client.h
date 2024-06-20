@@ -19,6 +19,8 @@ private:
   int written {0};
   int fd {-1};
   std::atomic<int> pending {0};
+  bool isClosing { false };
+  void close();
 
 public:
   enum class IOState { CONTINUE, CLOSE, ERROR, WOULDBLOCK };
@@ -27,7 +29,6 @@ public:
   IOState handleRead();
   IOState handleWrite();
   std::vector<Request> takeRequests();
-  //may block a worker thread
 
   //we intend for this to just sit in the fd->client map in the owning dispatch thread
   Client(Client&&) = delete;
@@ -35,8 +36,8 @@ public:
   Client(Client&) = delete;
   Client& operator=(Client&) = delete;
 
-  void close();
-  bool closed();
+  void initiateShutdown();
+  bool closing();
   bool isPending();
   
   void addOutgoing(std::string&& outboundStr);

@@ -5,6 +5,7 @@
 #include <cstring>
 #include <string>
 #include <array>
+#include <syncstream>
 #include <thread>
 #include <utility>
 #include <iostream>
@@ -25,35 +26,34 @@ consteval std::string_view logLevelToString(LogLevel level){
   return LogLevelStr[std::to_underlying(level)];
 }
 
-template <LogLevel level>
-std::ostream& greet(std::ostream& output) {
-  output << logLevelToString(level) << " (thread " << std::this_thread::get_id() << "): "; 
-  return output;
+template <LogLevel level, typename... Args>
+void withGreeting(std::ostream& output, Args... args) {
+  std::osyncstream synced {output};
+  synced << logLevelToString(level) << " (thread " << std::this_thread::get_id() << "): "; 
+  (synced << ... << args);
 }
 
 template <LogLevel level>
 inline void log(const std::string& message) {
   if constexpr (std::to_underlying(reportingLevel) < std::to_underlying(level)) return;
-  greet<level>(std::cout);
-  std::cout << message << "\n";
+  withGreeting<level>(std::cout, message, "\n");
 }
 
 template <>
 inline void log<LogLevel::ERROR>(const std::string& message) {
   if constexpr (std::to_underlying(reportingLevel) < std::to_underlying(LogLevel::ERROR)) return;
-  greet<LogLevel::ERROR>(std::cerr);
-  std::cerr << message;
-  std::cerr << " (last error: " << strerror(errno) << " (" << errno << "))\n";
+  withGreeting<LogLevel::ERROR>(std::cerr, message, " (last error: ", strerror(errno), " (", errno, "))");
 }
 
 template <>
 inline void log<LogLevel::FATAL>(const std::string& message) {
   if constexpr (std::to_underlying(reportingLevel) < std::to_underlying(LogLevel::FATAL)) return;
   std::cout.flush();
-  greet<LogLevel::FATAL>(std::cerr);
-  std::cerr << message;
-  std::cerr << " (last error: " << strerror(errno) << " (" << errno << "))\n";
-  std::cerr << "Fatal message recieved, shutting down...";
+  withGreeting<LogLevel::FATAL>(
+    std::cerr, 
+    message, " (last error: ", strerror(errno), " (", errno, "))\n",
+    "Fatal message received, shutting down...\n"
+  );
   raise(SIGINT);
 }
 

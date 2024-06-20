@@ -29,8 +29,8 @@ void Dispatch::work() {
     }
 
     //process existing notifications
-    auto notificationIt = pending.begin();
-    while (notificationIt != pending.end()) {
+    auto notificationIt = pendingNotifications.begin();
+    while (notificationIt != pendingNotifications.end()) {
       int fd = notificationIt->first;
       auto clientIt = clients.find(fd);
 
@@ -41,55 +41,33 @@ void Dispatch::work() {
       }
       Client& client = clientIt->second;
 
-      epoll_event& event = notificationIt->second;
+      unsigned notifications = notificationIt->second;
+      bool removeClient = false;
 
-      if ((event.events & EPOLLIN) && !(event.events & EPOLLRDHUP)) {
+      if ((notifications & EPOLLIN) && !(notifications & EPOLLRDHUP)) {
         Client::IOState result = client.handleRead();
-        switch (result) {
-          default:
-            std::unreachable();
-          case Client::IOState::ERROR:
-            std::cout << "error\n";
-            //todo let them know
-          case Client::IOState::CLOSE:
-            std::cout << "close\n";
-            // client.close();
-          case Client::IOState::WOULDBLOCK:
-            std::cout << "block\n";
-            event.events ^= EPOLLIN;
-          case Client::IOState::CONTINUE:
-            break;
-        }
-      }
-
-      if (event.events & EPOLLOUT) {
-        Client::IOState result = client.handleWrite();
-        //todo deduplicate
-        switch (result) {
-          default:
-            std::unreachable();
-          case Client::IOState::ERROR:
-            //todo let them know
-          case Client::IOState::CLOSE:
-            // client.close();
-          case Client::IOState::WOULDBLOCK:
-            event.events ^= EPOLLOUT;
-          case Client::IOState::CONTINUE:
-            break;
-        }
+        if (result == Client::IOState::ERROR) client.initiateShutdown(); //todo
+        else if (result == Client::IOState::WOULDBLOCK) notifications ^= EPOLLIN;
       }
 
       for (Request& request: client.takeRequests()){
         dispatchRequest(request, client);
       }
 
-      if (event.events & EPOLLHUP || (event.events & EPOLLRDHUP) && !client.isPending()) {
-        //achtung! todo! currently EPOLLHUP will crash worker threads...
-        clients.erase(clientIt);
+      if (notifications & EPOLLOUT) {
+        Client::IOState result = client.handleWrite();
+        if (result == Client::IOState::CLOSE) {
+          notifications = 0;
+          removeClient = true;
+        }
+        else if (result == Client::IOState::WOULDBLOCK) notifications ^= EPOLLOUT;
       }
 
-      if (!(event.events & (EPOLLIN | EPOLLOUT))) {
-        notificationIt = pending.erase(notificationIt);
+      if (!(notifications & (EPOLLIN | EPOLLOUT))) {
+        notificationIt = pendingNotifications.erase(notificationIt);
+        if (removeClient) {
+          clients.erase(clientIt);
+        }
       }
       else ++notificationIt;
     }
@@ -100,7 +78,9 @@ void Dispatch::work() {
       Logger::log<Logger::LogLevel::ERROR>("Couldn't epoll_wait - may miss notifications!");
     }
     else for (int i = 0; i < count; ++i) {
-      pending[eventBuffer[i].data.fd] = std::move(eventBuffer[i]);
+      auto it = pendingNotifications.find(eventBuffer[i].data.fd);
+      if (it != pendingNotifications.end()) it->second |= eventBuffer[i].events;
+      else pendingNotifications[eventBuffer[i].data.fd] = eventBuffer[i].events;
     }
   }
 }
@@ -138,12 +118,18 @@ void Dispatch::dispatchRequest(Request& request, Client& client) {
     Logger::log<Logger::LogLevel::DEBUG>("Couldn't find the handler");
   }
   else {
+    Task newTask = Task{.destination = &client, .request = std::move(request), .handler = handlerIt->second};
     if (server->numWorkerThreads < threadPoolSize) {
       std::thread(
         &Server::worker,
         server,
-        Task{.destination = &client, .request = std::move(request), .handler = handlerIt->second}
+        newTask
       ).detach();
+    }
+    else {
+      Logger::log<Logger::LogLevel::DEBUG>("Threadpool busy - enqueuing task");
+      //only place the dispatch thread may block...
+      server->taskQueue.add(newTask);
     }
   }
 }

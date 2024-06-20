@@ -21,7 +21,7 @@ private:
   std::thread thread;
   //todo
   std::unordered_map<int, Client> clients {};
-  std::unordered_map<int, epoll_event> pending {};
+  std::unordered_map<int, unsigned> pendingNotifications {};
   int epollfd {-1};
 
   void assumeClient(const int client);
