@@ -3,9 +3,13 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 project(server)
 
 set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_BUILD_TYPE Debug)
 
-add_library(mainlib src/parseHTTP.cpp src/server.cpp src/concurrentQueue.cpp src/dispatch.cpp src/client.cpp)
+# set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} -fconcepts-diagnostics-depth=2)
+
+add_library(mainlib src/server/parseHTTP.cpp src/server/server.cpp src/server/concurrentQueue.cpp src/server/dispatch.cpp src/server/client.cpp)
 target_include_directories(mainlib PUBLIC include)
 
 add_executable(main main.cpp)
