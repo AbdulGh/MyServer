@@ -5,10 +5,10 @@
 #include <sys/epoll.h>
 #include <utility>
 
-#include "dispatch.h"
-#include "common.h"
-#include "concurrentQueue.h"
-#include "task.h"
+#include "server/dispatch.h"
+#include "server/common.h"
+#include "utils/concurrentQueue.h"
+#include "server/task.h"
 
 namespace MyServer {
 
@@ -18,8 +18,8 @@ constexpr int threadPoolSize = 4;
 
 class Server {
 private:
-  ConcurrentQueue<int> incomingClientQueue {};
-  ConcurrentQueue<Task> taskQueue {};
+  Utils::ConcurrentQueue<int> incomingClientQueue {};
+  Utils::ConcurrentQueue<Task> taskQueue {};
   std::array<HandlerMap, std::to_underlying(Request::Method::NUM_METHODS)> handlers {};
   int serverfd;
 

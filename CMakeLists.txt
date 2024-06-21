@@ -9,7 +9,7 @@ set(CMAKE_BUILD_TYPE Debug)
 
 # set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} -fconcepts-diagnostics-depth=2)
 
-add_library(mainlib src/server/parseHTTP.cpp src/server/server.cpp src/server/concurrentQueue.cpp src/server/dispatch.cpp src/server/client.cpp)
+add_library(mainlib src/server/parseHTTP.cpp src/server/server.cpp src/server/dispatch.cpp src/server/client.cpp)
 target_include_directories(mainlib PUBLIC include)
 
 add_executable(main main.cpp)

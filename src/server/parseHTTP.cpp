@@ -1,7 +1,7 @@
 #include <string_view>
 
-#include "parseHTTP.h"
-#include "logger.h"
+#include "server/parseHTTP.h"
+#include "utils/logger.h"
 
 namespace MyServer {
 namespace HTTP {

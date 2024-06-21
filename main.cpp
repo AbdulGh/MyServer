@@ -1,5 +1,5 @@
-#include "server.h"
-#include "concurrentMap.h"
+#include "server/server.h"
+#include "utils/concurrentMap.h"
 
 int main()
 {

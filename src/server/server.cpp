@@ -6,11 +6,11 @@
 #include <netinet/in.h>
 #include <unistd.h>
 
-#include "server.h"
-#include "common.h"
-#include "logger.h"
-#include "concurrentQueue.h"
-#include "task.h"
+#include "server/server.h"
+#include "server/common.h"
+#include "utils/logger.h"
+#include "utils/concurrentQueue.h"
+#include "server/task.h"
 
 namespace MyServer {
 

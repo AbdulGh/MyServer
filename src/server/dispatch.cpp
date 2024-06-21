@@ -5,10 +5,10 @@
 #include <unistd.h>
 #include <utility>
 
-#include "dispatch.h"
-#include "server.h"
-#include "logger.h"
-#include "client.h"
+#include "server/dispatch.h"
+#include "server/server.h"
+#include "utils/logger.h"
+#include "server/client.h"
 
 namespace MyServer {
 

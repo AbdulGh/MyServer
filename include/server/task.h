@@ -1,8 +1,8 @@
 #ifndef TASK_H
 #define TASK_H
 
-#include "client.h"
-#include "common.h"
+#include "server/client.h"
+#include "server/common.h"
 
 namespace MyServer {
 

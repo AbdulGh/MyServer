@@ -6,8 +6,8 @@
 #include <queue>
 #include <string>
 
-#include "logger.h"
-#include "parseHTTP.h"
+#include "utils/logger.h"
+#include "server/parseHTTP.h"
 
 namespace MyServer {
 
