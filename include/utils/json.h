@@ -354,7 +354,6 @@ public:
 
       size_t nextQuote = str.find_first_of('\"', 1);
       if (nextQuote == std::string_view::npos) {
-        std::cout << str << std::endl;
         throw HTTPException(UNPROCESSABLE_ENTITY, "couldn't find closing \"");
       }
 
@@ -392,15 +391,26 @@ public:
     return "{" + toStringHelper<0>(false);
   }
 
+  /* doesnt work :(
+  template <size_t index = 0>
   constexpr auto& operator[](const std::string_view& key) {
-    constexpr size_t index = findIndex(key);
+    static_assert(index < sizeof...(Ks), "bad key");
+    if constexpr (key == keys[index]) return std::get<index>(contents);
+    return this->operator[]<index + 1>(key);
+  }
+  */
+
+  template <StringLiteral key>
+  auto& get() {
+    constexpr size_t index = findIndex<key>();
     return std::get<index>(contents);
   }
 
 private:
-  constexpr const size_t findIndex(const std::string_view& key) {
+  template <StringLiteral key>
+  consteval size_t findIndex() {
     for (size_t i = 0; i < sizeof...(Ks); ++i) {
-      if (key == keys[i]) return i;
+      if (key.contents == keys[i]) return i;
     }
     throw std::out_of_range("Unknown key");
   }
@@ -491,7 +501,7 @@ struct JSON<Nullable<T>> {
       if (str.substr(0, 4) != "null") {
         throw HTTPException(UNPROCESSABLE_ENTITY, "expected 'null'");
       }
-      stripWhitespace(str, 5);
+      stripWhitespace(str, 4);
       return JSON<Null>{};
     }
   }

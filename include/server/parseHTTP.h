@@ -32,6 +32,7 @@ private:
   std::string auxbuffer {}; // used for the v of kv 
   int count { 0 }; //used to count \r\n, etc 
   bool error { false };
+  bool fresh { true };
 
   static constexpr std::string_view httpnewline { "\r\n" };
 
@@ -40,7 +41,8 @@ private:
 public:
   RequestParser();
   void process(std::string_view input);
-  bool isError();
+  bool isError() const;
+  bool isFresh() const;
   void reset();
   std::vector<Request> takeRequests();
 };

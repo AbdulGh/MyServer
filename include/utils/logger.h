@@ -10,6 +10,7 @@
 #include <utility>
 #include <iostream>
 #include <chrono>
+#include <ctime>
 
 namespace MyServer {
 namespace Logger {
@@ -29,17 +30,17 @@ consteval std::string_view logLevelToString(LogLevel level){
 
 template <LogLevel level, typename... Args>
 void withGreeting(std::ostream& output, Args... args) {
+  using namespace std::chrono;
   std::osyncstream synced {output};
-  auto timepoint = std::chrono::system_clock::now();
-  // synced << std::format("[{:%Y-%m-%d %H%:%M:%S}] ", timepoint); 
-  synced << logLevelToString(level) << " (thread " << std::this_thread::get_id() << "): "; 
+  synced << "[" << system_clock::now() << "] " << logLevelToString(level) << " (thread " << std::this_thread::get_id() << "): "; 
   (synced << ... << args);
+  synced << std::endl;
 }
 
 template <LogLevel level>
 inline void log(const std::string& message) {
   if constexpr (std::to_underlying(reportingLevel) < std::to_underlying(level)) return;
-  withGreeting<level>(std::cout, message, "\n");
+  withGreeting<level>(std::cout, message);
 }
 
 template <>
@@ -55,7 +56,7 @@ inline void log<LogLevel::FATAL>(const std::string& message) {
   withGreeting<LogLevel::FATAL>(
     std::cerr, 
     message, " (last error: ", strerror(errno), " (", errno, "))\n",
-    "Fatal message received, shutting down...\n"
+    "Fatal message received, shutting down..."
   );
   raise(SIGINT);
 }

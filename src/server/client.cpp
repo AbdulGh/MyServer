@@ -16,7 +16,8 @@ void Client::log(const std::string& str) {
 }
 
 Client::IOState Client::handleRead() {
-  if (isClosing) return IOState::WOULDBLOCK;
+  if (isClosing()) return IOState::WOULDBLOCK;
+
   char buf[CHUNKSIZE];
   ssize_t readBytes = read(fd, buf, CHUNKSIZE);
 
@@ -37,63 +38,70 @@ Client::IOState Client::handleRead() {
 
   readState.process(std::string_view(buf, readBytes));
   if (readState.isError()) {
+    log<Logger::LogLevel::ERROR>("Could not parse http request");
     readState.reset();
+    errorOut();
     return IOState::ERROR;
   }
   return IOState::CONTINUE;
 }
 
 Client::IOState Client::handleWrite() {
-  //if a worker thread is writing to the queue, we don't bother blocking a dispatch thread
-  if (queueMutex.try_lock()) {
-    size_t allotment = CHUNKSIZE;
-    while (!outgoing.empty() && allotment > 0) {
-      const std::string& out = outgoing.front();
-      size_t desired = std::min(out.size() - written, allotment);
-      ssize_t bytesOut = write(fd, out.data() + written, desired);
+  //if a worker thread is writing to the (client-private) queue, we don't bother blocking a dispatch thread
+  std::unique_lock<std::mutex> lock(queueMutex, std::try_to_lock);
+  if (!lock.owns_lock()) return IOState::CONTINUE;
 
-      if (bytesOut < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-          return IOState::WOULDBLOCK;
-        }
-        else {
-          errorOut();
-          return IOState::ERROR;
-        }
+  size_t allotment = CHUNKSIZE;
+  while (!outgoing.empty() && allotment > 0) {
+    const std::string& out = outgoing.front();
+    size_t desired = std::min(out.size() - written, allotment);
+    ssize_t bytesOut = write(fd, out.data() + written, desired);
+
+    if (bytesOut < 0) {
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        return IOState::WOULDBLOCK;
       }
-      else if (bytesOut == 0) {
-        //todo what does this case actually mean?
+      else {
         errorOut();
         return IOState::ERROR;
       }
-
-      allotment -= bytesOut;
-      written += bytesOut;
-
-      if (written >= out.size()) {
-        written = 0;
-        outgoing.pop();
-      }
     }
-    queueMutex.unlock();
+    else if (bytesOut == 0) {
+      //todo what does this case actually mean?
+      errorOut();
+      return IOState::ERROR;
+    }
+
+    allotment -= bytesOut;
+    written += bytesOut;
+
+    if (written >= out.size()) {
+      written = 0;
+      outgoing.pop();
+    }
   }
 
-  if (pending == 0 && outgoing.empty()) {
-    return IOState::CLOSE;
-  }
   return IOState::CONTINUE;
 }
 
 void Client::addOutgoing(std::string&& outboundStr) {
   std::lock_guard<std::mutex> lock(queueMutex);
-  if (isErrored) return;
-  outgoing.push(std::move(outboundStr));
   --pending;
+  if (errored) return;
+  outgoing.push(std::move(outboundStr));
 }
 
-bool Client::isPending() {
+bool Client::isPending() const {
   //safe as only one dispatch thread considers a client
-  return pending.load() != 0 && !outgoing.empty();
+  return !(pending.load() == 0 && outgoing.empty() && readState.isFresh());
+}
+
+bool Client::isClosing() const {
+  return closing;
+}
+
+bool Client::isErrored() const {
+  return errored;
 }
 
 void Client::close() {
@@ -106,17 +114,17 @@ void Client::close() {
 
 void Client::errorOut() {
   log<Logger::LogLevel::ERROR>("Client error");
-  isErrored = true;
+  errored = true;
   std::lock_guard<std::mutex> lock(queueMutex);
   outgoing = {};
   //todo - sometimes this is actually a 5xx...
-  outgoing.push("HTTP/1.1 400 Bad Request");
+  // outgoing.push("HTTP/1.1 400 Bad Request");
   initiateShutdown();
 }
 
 void Client::initiateShutdown() {
   log<Logger::LogLevel::DEBUG>("Initiating client shutdown");
-  isClosing = true;
+  closing = true;
 }
 
 std::vector<Request> Client::takeRequests() {

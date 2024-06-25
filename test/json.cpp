@@ -9,6 +9,10 @@
 using namespace MyServer::Utils::JSON;
 
 int main() {
+  using Todo = JSON<Pair<"description", std::string>, Pair<"done", bool>, Pair<"due", Nullable<std::string>>>;
+  std::string_view todo {R"({"description": "myDescription", "done": true, "due": null})"};
+  Todo todoParsed { todo };
+
   using FlatObject = JSON<
     Pair<"key1", std::string>,
     Pair<"key2", double>,
@@ -16,13 +20,13 @@ int main() {
   >;
 
   FlatObject test1 {};
-  test1["key1"] = "hello";
-  test1["key2"] = 2.17;
-  test1["key3"] = false;
+  test1.get<"key1">() = "hello";
+  test1.get<"key2">() = 2.17;
+  test1.get<"key3">() = false;
 
-  assert(test1["key1"]->contents == "hello");
-  assert(test1["key2"]->contents == 2.17);
-  assert(test1["key3"]->contents == false);
+  assert(test1.get<"key1">()->contents == "hello");
+  assert(test1.get<"key2">()->contents == 2.17);
+  assert(test1.get<"key3">()->contents == false);
 
   std::string_view jsonString1 = "    \"blah blah blah\", \"next string in array\"]";
   std::string_view jsonString2 = "\"\"";
@@ -56,9 +60,9 @@ int main() {
   std::string_view flatjson {R"({"key1": "world", "key3": true, "key2": -3.14})"};
   FlatObject test2 {flatjson};
 
-  assert(test2["key1"]->contents == "world");
-  assert(test2["key2"]->contents == -3.14);
-  assert(test2["key3"]->contents == true);
+  assert(test2.get<"key1">()->contents == "world");
+  assert(test2.get<"key2">()->contents == -3.14);
+  assert(test2.get<"key3">()->contents == true);
 
   using User = JSON<Pair<"name", std::string>, Pair<"age", double>>;
   using UserList = JSON<ListOf<User>>;
@@ -68,8 +72,8 @@ int main() {
     {"name": "baby", "age": 1}
   ])"};
   UserList users {userList};
-  assert(users[0]["name"]->contents == "toddler");
-  assert(users[1]["age"]->contents == 1.0);
+  assert(users[0].get<"name">()->contents == "toddler");
+  assert(users[1].get<"age">()->contents == 1.0);
 
   using User = JSON<Pair<"name", std::string>, Pair<"age", double>>;
   using UserList = JSON<ListOf<User>>;
@@ -100,27 +104,27 @@ int main() {
 
   JSON<ListOf<UserGroup>> bigTest {finalBoss};
 
-  assert(!((*bigTest[0]["exclusive"])->contents));
-  assert((*bigTest[1]["users"])[0]["name"] == "user1");
-  assert((*bigTest[1]["users"])[1]["age"] == 25);
+  assert(!((*bigTest[0].get<"exclusive">())->contents));
+  assert((*bigTest[1].get<"users">())[0].get<"name">() == "user1");
+  assert((*bigTest[1].get<"users">())[1].get<"age">() == 25);
 
-  assert(bigTest[2]["exclusive"]);
+  assert(bigTest[2].get<"exclusive">());
   
   try {
     //todo think of better api
-    **bigTest[2]["exclusive"];
+    **bigTest[2].get<"exclusive">();
     assert(false && "bad variant access should throw");
   }
   catch (std::bad_variant_access) {}
 
-  assert(bigTest[2]["users"]->contents.size() == 0);
+  assert(bigTest[2].get<"users">()->contents.size() == 0);
 
   std::string_view userMap { R"({"asdf": {"name": "python fan", "age": 27}, "requirements": {"name": "anonymous", "age": -1}})" };
   JSON<MapOf<User>> result {userMap};
 
   assert(result.size() == 2);
-  assert(*result["asdf"]["name"] == "python fan");
-  assert(*result["requirements"]["age"] == -1.0);
+  assert(*result["asdf"].get<"name">() == "python fan");
+  assert(*result["requirements"].get<"age">() == -1.0);
   
   return 0;
 }

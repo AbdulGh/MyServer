@@ -2,6 +2,7 @@
 #define CLIENT_H
 
 #include <atomic>
+#include <chrono>
 #include <mutex>
 #include <queue>
 #include <string>
@@ -20,25 +21,25 @@ private:
   int written {0};
   int fd {-1};
   std::atomic<int> pending {0};
-  bool isClosing {false};
-  bool isErrored {false};
+  bool closing {false};
+  bool errored {false};
+
   void close();
-
-  void errorOut();
   void initiateShutdown();
-  bool closing();
-  bool isPending();
-
   template <Logger::LogLevel level>
   void log(const std::string&);
   
 public:
-  enum class IOState { CONTINUE, CLOSE, ERROR, WOULDBLOCK };
+  enum class IOState { CONTINUE, ERROR, WOULDBLOCK };
   Client(int fd): fd{fd} {};
   //these two return false if the client has errored (and should be disconnected)
   IOState handleRead();
   IOState handleWrite();
   std::vector<Request> takeRequests();
+  bool isPending() const;
+  bool isClosing() const;
+  bool isErrored() const;
+  void errorOut();
 
   //we intend for this to just sit in the fd->client map in the owning dispatch thread
   Client(Client&&) = delete;

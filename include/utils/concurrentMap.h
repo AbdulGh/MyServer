@@ -43,7 +43,7 @@ public:
     std::shared_lock<std::shared_mutex> lock(rwLock);
     auto it = map.find(key);
     if (it == map.end()) return {};
-    return *it;
+    return it->second;
   }
 
   bool insert(const std::pair<K, V>& insertion) {
@@ -51,9 +51,9 @@ public:
     return map.insert(insertion).second;
   }
 
-  size_t erase(const std::pair<K, V>& insertion) {
+  size_t erase(const K& deletion) {
     std::unique_lock<std::shared_mutex> lock(rwLock);
-    return map.erase(insertion);
+    return map.erase(deletion);
   }
 
   //todo check pair constness

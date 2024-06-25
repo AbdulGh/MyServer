@@ -8,6 +8,7 @@
 
 #include "server/server.h"
 #include "server/common.h"
+#include "utils/httpException.h"
 #include "utils/logger.h"
 #include "utils/concurrentQueue.h"
 #include "server/task.h"
@@ -77,10 +78,17 @@ void Server::worker(Task task) {
     try {
       result = task.handler(task.request);
     }
+    catch (Utils::HTTPException e) {
+      result = {
+        .statusCode = e.statusCode(),
+        .body = e.what()
+      };
+    }
     catch (std::exception e) {
+      Logger::log<Logger::LogLevel::ERROR>(std::string{"Uncaught exception: "} + e.what());
       result = {
         .statusCode = Response::StatusCode::INTERNAL_SERVER_ERROR,
-        .body = e.what()
+        .body = "Sorry, something went wrong - we are working extremely hard to find the problem"
       };
     }
 

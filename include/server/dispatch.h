@@ -1,6 +1,7 @@
 #ifndef DISPATCH_H
 #define DISPATCH_H
 
+#include <chrono>
 #include <sys/epoll.h>
 #include <thread>
 #include <unordered_map>
@@ -13,10 +14,14 @@ class Server;
 
 class Dispatch {
 private:
-  static constexpr int EPOLL_EVENT_FLAGS = EPOLLIN | EPOLLOUT | EPOLLRDHUP;
+  static constexpr int EPOLL_EVENT_FLAGS = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP;
   static constexpr int maxNotifications = 1000;
   epoll_event eventBuffer[maxNotifications];
   Server* const server {nullptr};
+
+  std::chrono::time_point<std::chrono::system_clock> nextStatusUpdate {
+    std::chrono::time_point<std::chrono::system_clock>::min()
+  };
 
   std::thread thread;
   //todo

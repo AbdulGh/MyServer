@@ -15,6 +15,7 @@ void RequestParser::reset() {
   buffer = ""; auxbuffer = "";
   count = 0;
   error = false;
+  fresh = true;
 }
 
 void RequestParser::commitAndContinue(std::string_view input) {
@@ -24,8 +25,12 @@ void RequestParser::commitAndContinue(std::string_view input) {
   process(input);
 }
 
-bool RequestParser::isError() {
+bool RequestParser::isError() const {
   return error;
+}
+
+bool RequestParser::isFresh() const {
+  return fresh;
 }
 
 /* State machine goes here */
@@ -42,6 +47,7 @@ void RequestParser::processHelper<RequestParser::State::PARSE_METHOD>(std::strin
     if (buffer == "GET") currentRequest.method = Request::Method::GET;
     else if (buffer == "POST") currentRequest.method = Request::Method::POST;
     else if (buffer == "PUT") currentRequest.method = Request::Method::PUT;
+    else if (buffer == "DELETE") currentRequest.method = Request::Method::DELETE;
     else {
       Logger::log<Logger::LogLevel::WARN>("Parsed this unsupported method: " + buffer);
       error = true;
@@ -161,7 +167,7 @@ void RequestParser::processHelper<RequestParser::State::PARSE_HEADER_VALUE>(std:
     while (r > l && std::isspace(auxbuffer[r])) --r;
     auxbuffer = auxbuffer.substr(l, r - l + 1);
     currentRequest.headers[std::exchange(buffer, "")] = std::exchange(auxbuffer, "");
-    
+
     //purposefully do not reset count, so FIND_HEADERS knows if it's found the next header or the body
     state = RequestParser::State::FIND_HEADERS;
     process(input.substr(head));
@@ -230,6 +236,10 @@ consteval RequestParser::StateActions RequestParser::generateActions() {
 
 void RequestParser::process(std::string_view input) {
   static constexpr StateActions actions = RequestParser::generateActions();
+  //todo feels off
+  if (input.size() != 0) {
+    fresh = false;
+  }
   return (this->*actions[std::to_underlying(state)])(input);
 }
 

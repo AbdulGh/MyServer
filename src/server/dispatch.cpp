@@ -1,5 +1,6 @@
 #include <cstring>
 #include <fcntl.h>
+#include <format>
 #include <string>
 #include <sys/epoll.h>
 #include <unistd.h>
@@ -19,6 +20,27 @@ Dispatch::Dispatch(Server* server): server {server} {
 
 void Dispatch::work() {
   for(;;) {
+    auto now = std::chrono::system_clock::now();
+    if (now > nextStatusUpdate) {
+      int pendingClients = 0;
+      int closingClients = 0;
+      int erroredClients = 0;
+
+      for (const auto& [_, client]: clients) {
+        pendingClients += client.isPending();
+        closingClients += client.isClosing();
+        erroredClients += client.isErrored();
+      }
+
+      Logger::log<Logger::LogLevel::INFO>(
+        std::format(
+          "Status update: {} clients, of which {} are pending, and {} are closing, and {} are errored. {} notifications and {} active worker threads.",
+          clients.size(), pendingClients, closingClients, erroredClients, pendingNotifications.size(), server->numWorkerThreads.load()
+        )
+      );
+      nextStatusUpdate = now + std::chrono::seconds{5};
+    } 
+
     //take new clients
     if (clients.empty()) {
       Logger::log<Logger::LogLevel::INFO>("Dispatch thread waiting for work");
@@ -33,7 +55,7 @@ void Dispatch::work() {
     while (notificationIt != pendingNotifications.end()) {
       int fd = notificationIt->first;
       auto clientIt = clients.find(fd);
-
+      
       if (clientIt == clients.end()) {
         Logger::log<Logger::LogLevel::ERROR>("Processed notification about a missing client");
         ++notificationIt;
@@ -41,10 +63,10 @@ void Dispatch::work() {
       }
       Client& client = clientIt->second;
 
-      unsigned notifications = notificationIt->second;
+      unsigned& notifications = notificationIt->second;
       bool removeClient = false;
 
-      if ((notifications & EPOLLIN) && !(notifications & EPOLLRDHUP)) {
+      if (notifications & EPOLLIN) {
         if (client.handleRead() == Client::IOState::WOULDBLOCK) notifications ^= EPOLLIN;
       }
 
@@ -52,20 +74,22 @@ void Dispatch::work() {
         dispatchRequest(request, client);
       }
 
-      if (notifications & EPOLLOUT) {
-        Client::IOState result = client.handleWrite();
-        if (result == Client::IOState::CLOSE) {
-          notifications = 0u;
-          removeClient = true;
-        }
-        else if (result == Client::IOState::WOULDBLOCK) notifications ^= EPOLLOUT;
+      if (notifications & EPOLLHUP) {
+        //todo
+        client.errorOut();
       }
 
-      if (!(notifications & (EPOLLIN | EPOLLOUT))) {
+      if (notifications & EPOLLOUT) {
+        if (client.handleWrite() == Client::IOState::WOULDBLOCK) notifications ^= EPOLLOUT;
+      }
+
+      if ((notifications & (EPOLLRDHUP | EPOLLHUP)) && !client.isPending()) {
+        clients.erase(clientIt);
+        notifications = 0u;
+      }
+
+      if (notifications == 0u) {
         notificationIt = pendingNotifications.erase(notificationIt);
-        if (removeClient) {
-          clients.erase(clientIt);
-        }
       }
       else ++notificationIt;
     }
@@ -76,9 +100,7 @@ void Dispatch::work() {
       Logger::log<Logger::LogLevel::ERROR>("Couldn't epoll_wait - may miss notifications!");
     }
     else for (int i = 0; i < count; ++i) {
-      auto it = pendingNotifications.find(eventBuffer[i].data.fd);
-      if (it != pendingNotifications.end()) it->second |= eventBuffer[i].events;
-      else pendingNotifications[eventBuffer[i].data.fd] = eventBuffer[i].events;
+      pendingNotifications[eventBuffer[i].data.fd] = eventBuffer[i].events;
     }
   }
 }
@@ -122,7 +144,7 @@ void Dispatch::dispatchRequest(Request& request, Client& client) {
       std::thread(
         &Server::worker,
         server,
-        newTask
+        std::move(newTask)
       ).detach();
     }
     else {

@@ -11,13 +11,14 @@
 #include <string>
 #include <functional>
 #include <utility>
+#include <iostream>
 
 namespace MyServer {
 
 using Query = std::unordered_map<std::string, std::string>;
 
 struct Request {
-  enum class Method { GET, POST, PUT, NUM_METHODS };
+  enum class Method { GET, POST, PUT, DELETE, NUM_METHODS };
   Method method;
   std::string endpoint;
   Query query;
@@ -34,9 +35,6 @@ struct Response {
     UNPROCESSABLE_ENTITY = 422,
     INTERNAL_SERVER_ERROR = 500,
   };
-  StatusCode statusCode;
-  std::string body;
-
   enum class ContentType: unsigned {
     PLAINTEXT, JSON, NUM_CONTENTTYPES
   };
@@ -44,15 +42,20 @@ struct Response {
     "text/plain", "application/json"
   };
 
+  StatusCode statusCode;
+  ContentType contentType;
+  std::string body;
+
   std::string toHTTPResponse() {
     std::stringstream out;
     out << "HTTP/1.1 " << std::to_underlying(statusCode) << "\r\n";
-    out << "Content-Type: text/plain; charset=US-ASCII\r\n";
+    out << "Content-Type: " << mimetypes[std::to_underlying(contentType)] << "; charset=US-ASCII\r\n";
     if (body.size() > 0) {
       out << "Content-Length: " << body.size() << "\r\n\r\n";
       out << body;
     }
     else out << "\r\n";
+
     return out.str();
   }
 };
