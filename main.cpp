@@ -46,8 +46,10 @@ int main()
       std::string_view todo_fixme {req.body};
       Todo todo {todo_fixme};
 
-      if (!todo.get<"description">()) throw Utils::HTTPException(Response::StatusCode::UNPROCESSABLE_ENTITY, "Need a description");
-      if (!todo.get<"done">()) todo.get<"done">() = false;
+      if (!todo["description"]) {
+        throw Utils::HTTPException(Response::StatusCode::UNPROCESSABLE_ENTITY, "Need a description");
+      }
+      if (!todo["done"]) todo["done"] = false;
 
       std::string id;
       if (auto it = req.query.find("id"); it != req.query.end()) id = it->second;
@@ -56,8 +58,8 @@ int main()
       todoDatabase.insert({id, todo});
 
       TodoResponse resp;
-      resp.get<"id">() = id;
-      resp.get<"todo">() = std::move(todo);
+      resp["id"] = id;
+      resp["todo"] = std::move(todo);
 
       return {
         .statusCode = Response::StatusCode::OK,

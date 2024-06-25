@@ -393,30 +393,16 @@ public:
   }
 
   constexpr auto& operator[](const std::string_view& key) {
-    constexpr size_t index = findIndex2(key);
-    return std::get<index>(contents);
-  }
-
-  template <StringLiteral key>
-  auto& get() {
-    constexpr size_t index = findIndex<key>();
+    constexpr size_t index = findIndex(key);
     return std::get<index>(contents);
   }
 
 private:
-  constexpr const size_t findIndex2(const std::string_view& key) {
+  constexpr const size_t findIndex(const std::string_view& key) {
     for (size_t i = 0; i < sizeof...(Ks); ++i) {
       if (key == keys[i]) return i;
     }
     throw std::out_of_range("Unknown key");
-  }
-
-
-  template <StringLiteral key, size_t index = 0>
-  consteval const size_t findIndex() {
-    static_assert(index < sizeof...(Ks), "Key not defined in type");
-    if constexpr (key == keys[index]) return index;
-    else return findIndex<key, index + 1>();
   }
 
   //maybe not intuitive that this method, like all the others, consumes from the json
