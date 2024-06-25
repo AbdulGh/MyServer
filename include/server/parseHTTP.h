@@ -21,7 +21,7 @@ private:
   //this stuff is because I wanted the compiler to generate the state jump table w/ a sort of pattern matching
   //more for fun than for good software engineering
   using StateActions = std::array<void (RequestParser::*)(std::string_view), std::to_underlying(State::NUM_STATES)>;
-  template <int i> static consteval void instantiateAction(StateActions& actions);
+  template <int i> static consteval void instantiateActions(StateActions& actions);
   static consteval StateActions generateActions(); 
   template <State state> void processHelper(std::string_view input);
 

@@ -13,7 +13,6 @@ namespace MyServer::Utils {
 
 template <typename T, typename K, typename V>
 concept MapLike = requires(T candidate, K key, V value) {
-  typename T::value_type;
   typename T::iterator;
 
   //users can iterate over the map, and we want to use a read-lock for this, so the iteration should be const
@@ -36,8 +35,8 @@ template <typename K, typename V, MapLike<K, V> MapType = std::unordered_map<K,V
 class ConcurrentMap 
 {
 private:
-  MapType map;
-  mutable std::shared_mutex rwLock;
+  MapType map {};
+  mutable std::shared_mutex rwLock {};
 
 public:
   std::optional<V> get(const K& key) const {
@@ -47,12 +46,12 @@ public:
     return *it;
   }
 
-  bool insert(std::pair<K, V> insertion) {
+  bool insert(const std::pair<K, V>& insertion) {
     std::unique_lock<std::shared_mutex> lock(rwLock);
     return map.insert(insertion).second;
   }
 
-  size_t erase(std::pair<K, V> insertion) {
+  size_t erase(const std::pair<K, V>& insertion) {
     std::unique_lock<std::shared_mutex> lock(rwLock);
     return map.erase(insertion);
   }
@@ -64,6 +63,10 @@ public:
     for (auto it = map.cbegin(); it != map.cend(); ++it) {
       fun(*it);
     }
+  }
+
+  const MapType& getUnderlyingMap() const {
+    return map;
   }
 };
 

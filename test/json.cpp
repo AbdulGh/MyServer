@@ -116,8 +116,7 @@ int main() {
   assert(bigTest[2].get<"users">()->contents.size() == 0);
 
   std::string_view userMap { R"({"asdf": {"name": "python fan", "age": 27}, "requirements": {"name": "anonymous", "age": -1}})" };
-  JSON<MapOf<User>> mapTest {userMap};
-  std::unordered_map<std::string, User>& result = mapTest.contents;
+  JSON<MapOf<User>> result {userMap};
 
   assert(result.size() == 2);
   assert(*result["asdf"].get<"name">() == "python fan");

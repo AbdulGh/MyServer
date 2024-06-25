@@ -114,6 +114,7 @@ void Dispatch::dispatchRequest(Request& request, Client& client) {
   auto handlerIt = methodMap.find(request.endpoint);
   if (handlerIt == methodMap.end()) {
     Logger::log<Logger::LogLevel::DEBUG>("Couldn't find the handler");
+    //todo throw 404 and close the client
   }
   else {
     Task newTask = Task{.destination = &client, .request = std::move(request), .handler = handlerIt->second};

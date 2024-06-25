@@ -9,6 +9,7 @@
 #include <thread>
 #include <utility>
 #include <iostream>
+#include <chrono>
 
 namespace MyServer {
 namespace Logger {
@@ -29,6 +30,8 @@ consteval std::string_view logLevelToString(LogLevel level){
 template <LogLevel level, typename... Args>
 void withGreeting(std::ostream& output, Args... args) {
   std::osyncstream synced {output};
+  auto timepoint = std::chrono::system_clock::now();
+  // synced << std::format("[{:%Y-%m-%d %H%:%M:%S}] ", timepoint); 
   synced << logLevelToString(level) << " (thread " << std::this_thread::get_id() << "): "; 
   (synced << ... << args);
 }

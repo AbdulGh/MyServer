@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 #include <array>
@@ -53,9 +54,10 @@ public:
 
   JSON() = delete;
   JSON(std::string_view& str): contents{consumeFromJSON(str)} {}
-  JSON(const Request& req): JSON{std::string_view{req.body}} {}
-  JSON(JSON&) = default;
+  // JSON(const Request& req): JSON{std::string_view{req.body}} {}
+  JSON(const JSON&) = default;
   JSON(JSON&&) = default;
+
 
   JSON(const ContentType<Ts...>& other) {
     contents = other; 
@@ -68,6 +70,7 @@ public:
     static_assert(false, "consumeFromJSON should be specialised");
   }
 
+  //todo these can probably be default
   JSON& operator=(const JSON& other) {
     contents = other.contents;
     return *this;
@@ -96,10 +99,10 @@ public:
     return lhs.contents == nested;
   }
 
-  std::string toString() = delete;
+  std::string toString() const = delete;
 };
 
-//useful so the user doesn't need to write JSON<Pair<"key", *JSON<*double*>*>
+//useful so the user doesn't need to write JSON<Pair<"key", JSON<double>>
 template <typename... Ts>
 struct IdempotentJSONTag {
   using type = JSON<Ts...>;
@@ -141,7 +144,7 @@ inline std::string JSON<std::string>::consumeFromJSON(std::string_view& json) {
 };
 
 template <>
-inline std::string JSON<std::string>::toString() {
+inline std::string JSON<std::string>::toString() const {
   return "\"" + contents + "\"" ;
 }
 
@@ -190,7 +193,7 @@ inline double JSON<double>::consumeFromJSON(std::string_view& json) {
 };
 
 template <>
-inline std::string JSON<double>::toString() {
+inline std::string JSON<double>::toString() const {
   return std::to_string(contents);
 }
 
@@ -210,7 +213,7 @@ inline bool JSON<bool>::consumeFromJSON(std::string_view& json) {
 };
 
 template <>
-inline std::string JSON<bool>::toString() {
+inline std::string JSON<bool>::toString() const {
   if (contents) return "true";
   return "false";
 }
@@ -229,7 +232,19 @@ struct JSON<ListOf<T>> {
 
   VectorType contents {};
 
+  //todo
+  JSON() {}
+  JSON(const JSON&) {} 
+  JSON(JSON&&) = default;
+  JSON& operator=(const JSON& other) {
+    contents = other.contents;
+    return *this;
+  };
+  JSON& operator=(JSON&&) = default;
+  JSON(VectorType&& list): contents{std::move(list)} {}
+
   JSON(std::string_view& json): contents{consumeFromJSON(json)} {}
+  // JSON(const Request& req): contents{consumeFromJSON(std::string_view{req.body})} {}
 
   static VectorType consumeFromJSON(std::string_view& json) {
     VectorType parsedContents {};
@@ -307,7 +322,14 @@ public:
   using ValueTupleType = std::tuple<std::optional<IdempotentJSONTag_t<Vs>>...>;
   ValueTupleType contents;
 
-  JSON() {}
+  //todo
+  JSON(){};
+  JSON(const JSON&) = default;
+  JSON(JSON&&) = default;
+  JSON& operator=(const JSON&) = default;
+  JSON& operator=(JSON&&) = default;
+
+  // JSON(const Request& req): contents{consumeFromJSON(std::string_view{req.body})} {}
   JSON(std::string_view& json): contents{consumeFromJSON(json)} {}
 
   static ValueTupleType consumeFromJSON(std::string_view& str) {
@@ -366,8 +388,13 @@ public:
     return newContents;
   }
 
-  std::string toString() {
+  std::string toString() const {
     return "{" + toStringHelper<0>(false);
+  }
+
+  constexpr auto& operator[](const std::string_view& key) {
+    constexpr size_t index = findIndex2(key);
+    return std::get<index>(contents);
   }
 
   template <StringLiteral key>
@@ -377,6 +404,13 @@ public:
   }
 
 private:
+  constexpr const size_t findIndex2(const std::string_view& key) {
+    for (size_t i = 0; i < sizeof...(Ks); ++i) {
+      if (key == keys[i]) return i;
+    }
+    throw std::out_of_range("Unknown key");
+  }
+
 
   template <StringLiteral key, size_t index = 0>
   consteval const size_t findIndex() {
@@ -398,7 +432,7 @@ private:
   }
 
   template <size_t index>
-  std::string toStringHelper(bool withComma) {
+  std::string toStringHelper(bool withComma) const {
     if constexpr (index >= sizeof...(Ks)) {
       return "}";
     }
@@ -409,7 +443,7 @@ private:
       std::stringstream out;
       if (withComma) out << ','; 
       out << "\"" << keys[index] << "\":" << std::get<index>(contents)->toString();
-      out << toStringHelper<index+1>(withComma);
+      out << toStringHelper<index+1>(true);
       return out.str();
     }
   }
@@ -429,6 +463,13 @@ struct Null {};
 
 template <>
 struct JSON<Null> {
+  //todo
+  JSON(){};
+  JSON(const JSON&) = default;
+  JSON(JSON&&) = default;
+  JSON& operator=(const JSON&) = default;
+  JSON& operator=(JSON&&) = default;
+
   friend constexpr bool operator==(const JSON<Null>&, const JSON<Null>&) {
     return true;
   }
@@ -437,7 +478,7 @@ struct JSON<Null> {
     return false;
   }
 
-  std::string toString() {
+  std::string toString() const {
     return "null";
   }
 };
@@ -447,7 +488,15 @@ struct JSON<Nullable<T>> {
   using NestedType = IdempotentJSONTag_t<T>;
   std::variant<NestedType, JSON<Null>> contents;
 
+  //todo
+  JSON(){};
+  JSON(const JSON&) = default;
+  JSON(JSON&&) = default;
+  JSON& operator=(const JSON&) = default;
+  JSON& operator=(JSON&&) = default;
+
   JSON(std::string_view& str): contents{consumeFromJSON(str)} {}
+  // JSON(const Request& req): contents{consumeFromJSON(std::string_view{req.body})} {}
 
   std::variant<NestedType, JSON<Null>> consumeFromJSON(std::string_view& str) {
     stripWhitespace(str);
@@ -461,11 +510,15 @@ struct JSON<Nullable<T>> {
     }
   }
 
-  operator bool() {
+  operator bool() const {
     return !std::holds_alternative<JSON<Null>>(contents);
   }
 
   NestedType& operator*() {
+    return std::get<NestedType>(contents);
+  }
+
+  const NestedType& operator*() const {
     return std::get<NestedType>(contents);
   }
 
@@ -478,7 +531,7 @@ struct JSON<Nullable<T>> {
     return std::get<IdempotentJSONTag_t<AccessType>>(contents);
   }
 
-  std::string toString() {
+  std::string toString() const {
     if (*this) return this->operator*().toString();
     return "null";
   }
@@ -491,18 +544,19 @@ struct ContentTypeWrapper<JSON<Nullable<T>>> {
 
 /*** 'general' (but still homogeneous) maps ***/
 // currently no hope of this being consteval
-
 template <typename T>
 struct MapOf {
   using type = T;
 };
 
 template <typename T> 
-struct JSON<MapOf<T>> {
+struct JSON<MapOf<T>>: std::unordered_map<std::string, IdempotentJSONTag_t<T>> {
   using JSONType = IdempotentJSONTag_t<T>;
-  std::unordered_map<std::string, JSONType> contents;
+  using MapType = std::unordered_map<std::string, JSONType>;
 
-  JSON(std::string_view& str): contents{consumeFromJSON(str)} {}
+  JSON(){}
+  JSON(std::string_view& str): MapType{consumeFromJSON(str)} {}
+  // JSON(const Request& req): MapType{consumeFromJSON(std::string_view{req.body})} {}
 
   std::unordered_map<std::string, JSONType> consumeFromJSON(std::string_view& json) {
     std::unordered_map<std::string, JSONType> newContents {};
@@ -528,7 +582,7 @@ struct JSON<MapOf<T>> {
       }
       stripWhitespace(json, 1);
 
-      contents.emplace(std::piecewise_construct, std::forward_as_tuple(key), std::forward_as_tuple(json));
+      MapType::emplace(std::piecewise_construct, std::forward_as_tuple(key), std::forward_as_tuple(json));
 
       //look for comma 
       stripWhitespace(json);
@@ -542,15 +596,15 @@ struct JSON<MapOf<T>> {
     return newContents;
   }
 
-  std::string toString() {
-    if (contents.size() == 0) return "{}";
+  std::string toString() const {
+    if (MapType::size() == 0) return "{}";
 
     std::stringstream out {};
     out << '{';
-    auto it = contents.begin();
+    auto it = MapType::begin();
     out << '"' << it->first << "\":" << it->second.toString(); 
 
-    while (++it != contents.end()) {
+    while (++it != MapType::end()) {
       out << ",\"" << it->first << "\":" << it->second.toString(); 
     }
 
@@ -559,12 +613,10 @@ struct JSON<MapOf<T>> {
   }
 };
 
-
 template <typename T> 
 struct ContentTypeWrapper<JSON<MapOf<T>>> {
   using type = std::unordered_map<std::string, T>;
 };
-
 
 }
 

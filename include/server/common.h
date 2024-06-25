@@ -17,7 +17,7 @@ namespace MyServer {
 using Query = std::unordered_map<std::string, std::string>;
 
 struct Request {
-  enum class Method { GET, POST, NUM_METHODS };
+  enum class Method { GET, POST, PUT, NUM_METHODS };
   Method method;
   std::string endpoint;
   Query query;
@@ -36,6 +36,13 @@ struct Response {
   };
   StatusCode statusCode;
   std::string body;
+
+  enum class ContentType: unsigned {
+    PLAINTEXT, JSON, NUM_CONTENTTYPES
+  };
+  std::array<std::string_view, std::to_underlying(ContentType::NUM_CONTENTTYPES)> mimetypes {
+    "text/plain", "application/json"
+  };
 
   std::string toHTTPResponse() {
     std::stringstream out;

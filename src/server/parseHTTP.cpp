@@ -6,6 +6,8 @@
 namespace MyServer {
 namespace HTTP {
 
+//todo the function resolution inside the state definitions could be constexpr
+
 RequestParser::RequestParser(): state{State::PARSE_METHOD} {};
 void RequestParser::reset() {
   state = State::PARSE_METHOD;
@@ -39,8 +41,9 @@ void RequestParser::processHelper<RequestParser::State::PARSE_METHOD>(std::strin
   if (head < input.size() && input[head] == ' ') {
     if (buffer == "GET") currentRequest.method = Request::Method::GET;
     else if (buffer == "POST") currentRequest.method = Request::Method::POST;
+    else if (buffer == "PUT") currentRequest.method = Request::Method::PUT;
     else {
-      Logger::log<Logger::LogLevel::ERROR>("Parsed this unsupported method: " + buffer);
+      Logger::log<Logger::LogLevel::WARN>("Parsed this unsupported method: " + buffer);
       error = true;
     }
     buffer = "";
@@ -209,19 +212,19 @@ void RequestParser::processHelper<RequestParser::State::PARSE_BODY>(std::string_
 
 // I wanted to do this with a for loop but it doesn't compile...
 template <> 
-consteval void RequestParser::instantiateAction<-1>(StateActions&) {
+consteval void RequestParser::instantiateActions<-1>(StateActions&) {
   return;
 }
 
 template <int i> 
-consteval void RequestParser::instantiateAction(StateActions& actions) {
+consteval void RequestParser::instantiateActions(StateActions& actions) {
   actions[i] = &RequestParser::processHelper<static_cast<RequestParser::State>(i)>;
-  instantiateAction<i - 1>(actions);
+  instantiateActions<i - 1>(actions);
 }
 
 consteval RequestParser::StateActions RequestParser::generateActions() {
   StateActions actions {};
-  instantiateAction<std::to_underlying(RequestParser::State::NUM_STATES) - 1>(actions);
+  instantiateActions<std::to_underlying(RequestParser::State::NUM_STATES) - 1>(actions);
   return actions;
 }
 
