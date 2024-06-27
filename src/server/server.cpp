@@ -94,9 +94,7 @@ void Server::worker(Task task) {
 
     task.destination->addOutgoing(result.toHTTPResponse());
 
-    if (std::optional<Task> taskOpt {taskQueue.take()})  {
-      task = std::move(*taskOpt);
-    }
+    if (std::optional<Task> taskOpt {taskQueue.take()}) task = std::move(*taskOpt);
     else break;
   }
   Logger::log<Logger::LogLevel::DEBUG>("Shutting down a worker thread");

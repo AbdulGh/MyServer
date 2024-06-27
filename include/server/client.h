@@ -2,7 +2,6 @@
 #define CLIENT_H
 
 #include <atomic>
-#include <chrono>
 #include <mutex>
 #include <queue>
 #include <string>

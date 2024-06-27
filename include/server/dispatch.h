@@ -30,7 +30,7 @@ private:
   int epollfd {-1};
 
   void assumeClient(const int client);
-  void dispatchRequest(Request& request, Client& destination);
+  void dispatchRequest(Request&& request, Client& destination);
 public:
   Dispatch(Server* parent);
   void work();

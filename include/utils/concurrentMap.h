@@ -27,7 +27,7 @@ concept MapLike = requires(T candidate, K key, V value) {
   { candidate.cbegin() } -> std::same_as<typename T::const_iterator>;
   { candidate.cend() } -> std::same_as<typename T::const_iterator>;
 
-  { candidate.insert(std::make_pair(key, value)) } -> std::same_as<std::pair<typename T::iterator, bool>>;
+  { candidate.insert_or_assign(key, value) } -> std::same_as<std::pair<typename T::iterator, bool>>;
   { candidate.erase(key) } -> std::same_as<std::size_t>;
 };
 
@@ -46,9 +46,9 @@ public:
     return it->second;
   }
 
-  bool insert(const std::pair<K, V>& insertion) {
+  bool insert_or_assign(const K& key, const V& value) {
     std::unique_lock<std::shared_mutex> lock(rwLock);
-    return map.insert(insertion).second;
+    return map.insert_or_assign(key, value).second;
   }
 
   size_t erase(const K& deletion) {

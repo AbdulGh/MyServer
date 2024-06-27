@@ -39,7 +39,6 @@ Client::IOState Client::handleRead() {
   readState.process(std::string_view(buf, readBytes));
   if (readState.isError()) {
     log<Logger::LogLevel::ERROR>("Could not parse http request");
-    readState.reset();
     errorOut();
     return IOState::ERROR;
   }
@@ -58,9 +57,7 @@ Client::IOState Client::handleWrite() {
     ssize_t bytesOut = write(fd, out.data() + written, desired);
 
     if (bytesOut < 0) {
-      if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        return IOState::WOULDBLOCK;
-      }
+      if (errno == EAGAIN || errno == EWOULDBLOCK) return IOState::WOULDBLOCK;
       else {
         errorOut();
         return IOState::ERROR;
@@ -114,8 +111,8 @@ void Client::close() {
 
 void Client::errorOut() {
   log<Logger::LogLevel::ERROR>("Client error");
-  errored = true;
   std::lock_guard<std::mutex> lock(queueMutex);
+  errored = true;
   outgoing = {};
   //todo - sometimes this is actually a 5xx...
   // outgoing.push("HTTP/1.1 400 Bad Request");

@@ -5,10 +5,9 @@ from dataclasses_json import dataclass_json
 import random
 import aiohttp
 import asyncio
-from time import sleep
 
 url = "http://localhost:8675/todo"
-numTodos = 100
+numTodos = 1
 
 def randomString(length: int) -> str:
 	return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
@@ -34,6 +33,7 @@ class Client:
 		self.session = None
   
 	async def __aenter__(self):
+		# self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(sock_read=1, total=2))
 		self.session = aiohttp.ClientSession()
 		return self
 
@@ -85,6 +85,6 @@ class Client:
 if __name__ == "__main__":
 	async def main():
 		async with Client() as client:
-			await client.run(100)
+			await client.run(10000)
 
 	asyncio.run(main())

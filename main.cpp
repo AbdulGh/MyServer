@@ -88,10 +88,7 @@ int main()
       if (auto it = req.query.find("id"); it != req.query.end()) id = it->second;
       else id = std::format("{:x}", mt());
 
-      todoDatabase.insert({id, todo});
-      if (todoDatabase.get(id)->get<"description">() != todo.get<"description">()) {
-        std::cout << "interesting...\n";
-      }
+      todoDatabase.insert_or_assign(id, todo);
 
       TodoResponse resp;
       resp.get<"id">() = id;

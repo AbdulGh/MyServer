@@ -315,6 +315,7 @@ struct Pair {
   using value = V; //not actually used
 };
 
+//todo - sort the keys for proper comparison?
 template <StringLiteral... Ks, typename... Vs>
 class JSON<Pair<Ks, Vs>...> {
 public:
@@ -389,6 +390,11 @@ public:
 
   std::string toString() const {
     return "{" + toStringHelper<0>(false);
+  }
+
+  //todo
+  friend bool operator==(const JSON<Pair<Ks, Vs>...>& lhs, const JSON<Pair<Ks, Vs>...>& rhs) {
+    return lhs.contents == rhs.contents;
   }
 
   /* doesnt work :(

@@ -32,12 +32,27 @@ void Dispatch::work() {
         erroredClients += client.isErrored();
       }
 
+      int read = 0; int write = 0; int rdhup = 0;
+      for (const auto& [_, notification]: pendingNotifications) {
+        read += (notification & EPOLLIN) > 0;
+        write += (notification & EPOLLOUT) > 0;
+        rdhup += (notification & EPOLLRDHUP) > 0;
+      }
+
       Logger::log<Logger::LogLevel::INFO>(
         std::format(
           "Status update: {} clients, of which {} are pending, and {} are closing, and {} are errored. {} notifications and {} active worker threads.",
           clients.size(), pendingClients, closingClients, erroredClients, pendingNotifications.size(), server->numWorkerThreads.load()
         )
       );
+
+      Logger::log<Logger::LogLevel::INFO>(
+        std::format(
+          "{} want read, {} want write, {} rdhuped.",
+          read, write, rdhup
+        )
+      );
+
       nextStatusUpdate = now + std::chrono::seconds{5};
     } 
 
@@ -58,7 +73,7 @@ void Dispatch::work() {
       
       if (clientIt == clients.end()) {
         Logger::log<Logger::LogLevel::ERROR>("Processed notification about a missing client");
-        ++notificationIt;
+        notificationIt = pendingNotifications.erase(notificationIt);
         continue;
       }
       Client& client = clientIt->second;
@@ -71,7 +86,7 @@ void Dispatch::work() {
       }
 
       for (Request& request: client.takeRequests()){
-        dispatchRequest(request, client);
+        dispatchRequest(std::move(request), client);
       }
 
       if (notifications & EPOLLHUP) {
@@ -130,13 +145,13 @@ void Dispatch::assumeClient(int clientfd) {
   //(https://devblogs.microsoft.com/oldnewthing/20231023-00/?p=108916)
 }
 
-void Dispatch::dispatchRequest(Request& request, Client& client) {
+void Dispatch::dispatchRequest(Request&& request, Client& client) {
   Logger::log<Logger::LogLevel::DEBUG>("Dispatching a request");
   const HandlerMap& methodMap = server->handlers[std::to_underlying(request.method)];
   auto handlerIt = methodMap.find(request.endpoint);
   if (handlerIt == methodMap.end()) {
     Logger::log<Logger::LogLevel::DEBUG>("Couldn't find the handler");
-    //todo throw 404 and close the client
+    //todo throw 404
   }
   else {
     Task newTask = Task{.destination = &client, .request = std::move(request), .handler = handlerIt->second};
