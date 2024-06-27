@@ -60,6 +60,8 @@ public:
 
   JSON(const JSON&) = default;
   JSON(JSON&&) = default;
+  JSON& operator=(const JSON& other) = default;
+  JSON& operator=(JSON&& other) = default;
 
   JSON(const ContentType<Ts...>& other) {
     contents = other; 
@@ -70,17 +72,6 @@ public:
 
   static ContentType<Ts...> consumeFromJSON(std::string_view&) {
     static_assert(false, "consumeFromJSON should be specialised");
-  }
-
-  //todo these can probably be default
-  JSON& operator=(const JSON& other) {
-    contents = other.contents;
-    return *this;
-  }
-
-  JSON& operator=(JSON&& other) {
-    contents = std::move(other.contents);
-    return *this;
   }
 
   friend bool operator==(const JSON<Ts...>& lhs, const JSON<Ts...>& rhs) {

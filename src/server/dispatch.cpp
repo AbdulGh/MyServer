@@ -154,7 +154,10 @@ void Dispatch::dispatchRequest(Request&& request, Client& client) {
     //todo throw 404
   }
   else {
-    Task newTask = Task{.destination = &client, .request = std::move(request), .handler = handlerIt->second};
+    Task newTask = Task{
+      .destination = &client, .sequence = client.incrementSequence(),
+      .request = std::move(request), .handler = handlerIt->second
+    };
     if (server->numWorkerThreads < threadPoolSize) {
       std::thread(
         &Server::worker,

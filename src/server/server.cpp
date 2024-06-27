@@ -92,7 +92,7 @@ void Server::worker(Task task) {
       };
     }
 
-    task.destination->addOutgoing(result.toHTTPResponse());
+    task.destination->addOutgoing(task.sequence, result.toHTTPResponse());
 
     if (std::optional<Task> taskOpt {taskQueue.take()}) task = std::move(*taskOpt);
     else break;

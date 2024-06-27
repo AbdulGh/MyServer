@@ -45,14 +45,27 @@ Client::IOState Client::handleRead() {
   return IOState::CONTINUE;
 }
 
+// this looks un-threadsafe in various places, but note, this is the only place where outgoing is consumed, and by a single thread
+// (the dispatch thread that owns the client)
+// so for example, if we can tell outgoing is not empty, it will never be empty unless we made it so
+// and sequence does not need to be atomic as we (dispatch thread) are the only people who touch it
 Client::IOState Client::handleWrite() {
-  //if a worker thread is writing to the (client-private) queue, we don't bother blocking a dispatch thread
+  if (outgoing.empty()) return IOState::CONTINUE;
+  // for example, the use of cbegin leads to an eventual popFront - seems suspect,
+  // but something will only 'cut in line' if we are out of sequence anyway, and the following if will break
+  // in general we rely on [container.requirements.dataraces] and the fact that map iterators are not invalidated on insertion
+  const std::map<unsigned long, std::string>::const_iterator cbegin = outgoing.cbegin();
+  if (cbegin->first > sequence) return IOState::CONTINUE;
+
+  // if a worker thread is writing to the (client-private) queue, we don't bother blocking a dispatch thread
   std::unique_lock<std::mutex> lock(queueMutex, std::try_to_lock);
   if (!lock.owns_lock()) return IOState::CONTINUE;
 
   size_t allotment = CHUNKSIZE;
-  while (!outgoing.empty() && allotment > 0) {
-    const std::string& out = outgoing.front();
+  
+  do {
+    const std::string& out = cbegin->second;
+
     size_t desired = std::min(out.size() - written, allotment);
     ssize_t bytesOut = write(fd, out.data() + written, desired);
 
@@ -73,19 +86,25 @@ Client::IOState Client::handleWrite() {
     written += bytesOut;
 
     if (written >= out.size()) {
+      ++sequence;
       written = 0;
-      outgoing.pop();
+      outgoing.popFront();
     }
+  } while (!outgoing.empty() && allotment > 0) ;
+
+  if (outgoing.empty() && pending == 0) {
+    sequence = 0;
   }
 
   return IOState::CONTINUE;
 }
 
-void Client::addOutgoing(std::string&& outboundStr) {
+void Client::addOutgoing(unsigned long sequence, std::string&& outboundStr) {
   std::lock_guard<std::mutex> lock(queueMutex);
   --pending;
   if (errored) return;
-  outgoing.push(std::move(outboundStr));
+  //todo check insert_or_assign for rvalue stuff
+  outgoing.insert_or_assign(sequence, std::move(outboundStr));
 }
 
 bool Client::isPending() const {
@@ -101,6 +120,14 @@ bool Client::isErrored() const {
   return errored;
 }
 
+unsigned long Client::incrementSequence() {
+  return sequence++;
+}
+
+void Client::resetSequence() {
+  sequence = 0;
+}
+
 void Client::close() {
   if (fd < 0) {
     log<Logger::LogLevel::FATAL> ("(Application error) Tried to close a closed socket");
@@ -113,7 +140,7 @@ void Client::errorOut() {
   log<Logger::LogLevel::ERROR>("Client error");
   std::lock_guard<std::mutex> lock(queueMutex);
   errored = true;
-  outgoing = {};
+  outgoing.clear(); 
   //todo - sometimes this is actually a 5xx...
   // outgoing.push("HTTP/1.1 400 Bad Request");
   initiateShutdown();

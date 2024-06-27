@@ -33,9 +33,7 @@ class Client:
 		self.session = None
   
 	async def __aenter__(self):
-		# self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(sock_read=1, total=2))
-		# self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(sock_read=1))
-		self.session = aiohttp.ClientSession()
+		self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(sock_read=1))
 		return self
 
 	async def __aexit__(self, *excinfo):
@@ -76,7 +74,6 @@ class Client:
 		
 	def doSomethingRandom(self, id):
 		return random.choice([self.modifyTodo, self.checkTodo, self.eraseTodo])(id)
-		# return random.choice([self.checkTodo])(id)
 
 	async def run(self, numIterations: int):
 		for i in range(numIterations):

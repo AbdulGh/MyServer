@@ -2,6 +2,8 @@
 #define CONCURRENTMAP_H
 
 // *Very* basic, just uses a R/W mutex to protect the map
+#include <iostream>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <shared_mutex>
@@ -12,9 +14,8 @@
 namespace MyServer::Utils {
 
 template <typename T, typename K, typename V>
-concept MapLike = requires(T candidate, K key, V value) {
-  typename T::iterator;
-
+concept MapLike = requires(T candidate, K key, V value, typename T::iterator it) {
+  typename T::const_iterator;
   //users can iterate over the map, and we want to use a read-lock for this, so the iteration should be const
   //probably this isn't enough and the user can cause race conditions if they try
   // requires requires (T::iterator it) {
@@ -29,12 +30,16 @@ concept MapLike = requires(T candidate, K key, V value) {
 
   { candidate.insert_or_assign(key, value) } -> std::same_as<std::pair<typename T::iterator, bool>>;
   { candidate.erase(key) } -> std::same_as<std::size_t>;
+  { candidate.erase(it) } -> std::same_as<typename T::iterator>;
+  { candidate.clear() } -> std::same_as<void>;
+
+  { candidate.empty() } -> std::same_as<bool>;
 };
 
 template <typename K, typename V, MapLike<K, V> MapType = std::unordered_map<K,V>>
 class ConcurrentMap 
 {
-private:
+protected:
   MapType map {};
   mutable std::shared_mutex rwLock {};
 
@@ -56,7 +61,6 @@ public:
     return map.erase(deletion);
   }
 
-  //todo check pair constness
   template <typename FuncType>
   requires std::invocable<FuncType, const std::pair<K,V>&>
   void forEach(FuncType&& fun) {
@@ -67,6 +71,31 @@ public:
 
   const MapType& getUnderlyingMap() const {
     return map;
+  }
+
+  void clear() {
+    std::unique_lock<std::shared_mutex> lock(this->rwLock);
+    map.clear();
+  }
+
+  bool empty() const {
+    return map.empty();
+  }
+};
+
+//currently trusts the user that the chosen map type makes sense
+template <typename K, typename V, MapLike<K, V> MapType = std::map<K,V>>
+class OrderedConcurrentMap: public ConcurrentMap<K, V, MapType>
+{
+public:
+  MapType::const_iterator cbegin() const {
+    std::shared_lock<std::shared_mutex> lock(this->rwLock);
+    return this->map.cbegin();
+  }
+
+  void popFront() {
+    std::unique_lock<std::shared_mutex> lock(this->rwLock);
+    this->map.erase(this->map.begin());
   }
 };
 

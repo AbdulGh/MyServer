@@ -2,10 +2,11 @@
 #define CLIENT_H
 
 #include <atomic>
+#include <map>
 #include <mutex>
-#include <queue>
 #include <string>
 
+#include "utils/concurrentMap.h"
 #include "utils/logger.h"
 #include "server/parseHTTP.h"
 
@@ -15,13 +16,17 @@ class Client
 {
 private:
   HTTP::RequestParser readState {};
+  //we use the map as a queue
   std::mutex queueMutex {};
-  std::queue<std::string> outgoing;
+  Utils::OrderedConcurrentMap<unsigned long, std::string> outgoing;
   int written {0};
   int fd {-1};
   std::atomic<int> pending {0};
   bool closing {false};
   bool errored {false};
+
+  unsigned long sequence = 0;
+  void resetSequence();
 
   void close();
   void initiateShutdown();
@@ -31,10 +36,13 @@ private:
 public:
   enum class IOState { CONTINUE, ERROR, WOULDBLOCK };
   Client(int fd): fd{fd} {};
-  //these two return false if the client has errored (and should be disconnected)
+
   IOState handleRead();
   IOState handleWrite();
   std::vector<Request> takeRequests();
+
+  //todo incrementSequence and its usage feels very coupled
+  unsigned long incrementSequence();
   bool isPending() const;
   bool isClosing() const;
   bool isErrored() const;
@@ -46,7 +54,7 @@ public:
   Client(Client&) = delete;
   Client& operator=(Client&) = delete;
 
-  void addOutgoing(std::string&& outboundStr);
+  void addOutgoing(unsigned long sequence, std::string&& outboundStr);
 
   ~Client();
 };

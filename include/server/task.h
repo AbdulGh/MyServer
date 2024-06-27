@@ -8,6 +8,7 @@ namespace MyServer {
 
 struct Task {
   Client* destination;
+  unsigned long sequence;
   Request request;
   Handler handler;
 };
