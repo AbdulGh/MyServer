@@ -20,13 +20,13 @@ target_link_libraries(main PUBLIC mainlib)
 
 enable_testing()
 
-# add_executable(parseHTTP test/parseHTTP.cpp)
-# target_link_libraries(parseHTTP PUBLIC mainlib)
-# add_test(NAME parseHTTP COMMAND parseHTTP)
+add_executable(parseHTTP test/parseHTTP.cpp)
+target_link_libraries(parseHTTP PUBLIC mainlib)
+add_test(NAME parseHTTP COMMAND parseHTTP)
 
-#add_executable(json test/json.cpp)
-#target_link_libraries(json PUBLIC mainlib)
-#add_test(NAME json COMMAND json)
+add_executable(json test/json.cpp)
+target_link_libraries(json PUBLIC mainlib)
+add_test(NAME json COMMAND json)
 
 add_executable(map test/map.cpp)
 target_link_libraries(map PUBLIC mainlib)

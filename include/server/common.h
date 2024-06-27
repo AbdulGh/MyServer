@@ -50,11 +50,8 @@ struct Response {
     std::stringstream out;
     out << "HTTP/1.1 " << std::to_underlying(statusCode) << "\r\n";
     out << "Content-Type: " << mimetypes[std::to_underlying(contentType)] << "; charset=US-ASCII\r\n";
-    if (body.size() > 0) {
-      out << "Content-Length: " << body.size() << "\r\n\r\n";
-      out << body;
-    }
-    else out << "\r\n";
+    out << "Content-Length: " << body.size() << "\r\n\r\n";
+    out << body;
 
     return out.str();
   }

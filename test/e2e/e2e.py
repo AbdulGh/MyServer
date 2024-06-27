@@ -7,7 +7,7 @@ import aiohttp
 import asyncio
 
 url = "http://localhost:8675/todo"
-numTodos = 1
+numTodos = 50
 
 def randomString(length: int) -> str:
 	return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
@@ -34,6 +34,7 @@ class Client:
   
 	async def __aenter__(self):
 		# self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(sock_read=1, total=2))
+		# self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(sock_read=1))
 		self.session = aiohttp.ClientSession()
 		return self
 
@@ -67,7 +68,7 @@ class Client:
 		assert result == self.todoDict[id]
   
 	async def eraseTodo(self, id):
-		await self.checkTodo(id)
+		print(f"deleting todo with id {id}")
 		await self.session.delete(url, params={"id": id})
 		result = await self.session.get(url, params={"id": id})
 		assert result.status == 404
@@ -75,6 +76,7 @@ class Client:
 		
 	def doSomethingRandom(self, id):
 		return random.choice([self.modifyTodo, self.checkTodo, self.eraseTodo])(id)
+		# return random.choice([self.checkTodo])(id)
 
 	async def run(self, numIterations: int):
 		for i in range(numIterations):
@@ -85,6 +87,6 @@ class Client:
 if __name__ == "__main__":
 	async def main():
 		async with Client() as client:
-			await client.run(10000)
+			await client.run(100)
 
 	asyncio.run(main())

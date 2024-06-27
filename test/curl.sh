@@ -22,9 +22,6 @@ makeTodo() {
   echo $response;
 }
 
-makeTodo "todo 1"
-makeTodo "todo 2"
-makeTodo "todo 3"
-makeTodo "todo 4"
-makeTodo "todo 5"
+export -f makeTodo
 
+seq 1 10000 | xargs -n1 -P20 -I{} bash -c 'makeTodo "{}"'

@@ -7,7 +7,6 @@
 #include <string>
 #include <vector>
 #include <array>
-#include <iostream>
 #include <tuple>
 #include <utility>
 #include <variant>
@@ -34,7 +33,6 @@ struct Member<T, std::variant<Ts...>> : std::disjunction<std::is_same<T, Ts>...>
 template <typename T>
 concept JSONAtom = Member<T, std::variant<std::string, double, bool>>::value;
 
-//todo this shouldn't be needed
 template <typename... Ts>
 struct ContentTypeWrapper {};
 
@@ -53,11 +51,15 @@ public:
   ContentType<Ts...> contents;
 
   JSON() = delete;
+
   JSON(std::string_view& str): contents{consumeFromJSON(str)} {}
-  // JSON(const Request& req): JSON{std::string_view{req.body}} {}
+  JSON(const Request& req): contents{[&req]() {
+    std::string_view bodysv{ req.body };
+    return consumeFromJSON(bodysv);
+  }()} {}
+
   JSON(const JSON&) = default;
   JSON(JSON&&) = default;
-
 
   JSON(const ContentType<Ts...>& other) {
     contents = other; 
@@ -126,8 +128,6 @@ std::is_same_v<IdempotentJSONTag_t<JSON<std::string>>, IdempotentJSONTag_t<std::
 // - an array of json
 // - a lookup from strings to json
 // - or null
-
-/*** copy/move/comparison for atoms ***/
 
 /*** string type ***/
 template <>
@@ -219,7 +219,6 @@ inline std::string JSON<bool>::toString() const {
 }
 
 // homogeneous array of json
-
 template <typename T>
 struct ListOf {
   using type = IdempotentJSONTag_t<T>;
