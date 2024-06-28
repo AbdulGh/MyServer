@@ -1,10 +1,12 @@
 #include <csignal>
+#include <initializer_list>
 #include <string>
 #include <cstring>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <utility>
 
 #include "server/server.h"
 #include "server/common.h"
@@ -36,7 +38,7 @@ void Server::go() {
 
   // TCP socket
   serverfd = insist(socket(AF_INET, SOCK_STREAM, 0), "Couldn't make server socket");
-  insist(setsockopt(serverfd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)), "Todo");
+  insist(setsockopt(serverfd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)), "Couldn't set the socket as reusable");
   insist(bind(serverfd, addressbp, sizeof(address)), "Couldn't bind to server socket");
   insist(listen(serverfd, 128), "Couldn't listen to server file descriptor");
 
@@ -55,22 +57,6 @@ void Server::go() {
 
 void Server::stop() {
   close(serverfd);
-}
-
-template<size_t...Is>
-std::array<Dispatch, numDispatchThreads> Server::makeDispatchThreads(std::index_sequence<Is...>) {
-  return { ((void)Is, Dispatch{this})... };
-}
-std::array<Dispatch, numDispatchThreads> Server::makeDispatchThreads() {
-  return makeDispatchThreads(std::make_index_sequence<numDispatchThreads>());
-}
-
-template<size_t...Is>
-std::array<Worker, threadPoolSize> Server::makeWorkerThreads(std::index_sequence<Is...>) {
-  return { ((void)Is, Worker{})... };
-}
-std::array<Worker, threadPoolSize> Server::makeWorkerThreads() {
-  return makeWorkerThreads(std::make_index_sequence<threadPoolSize>());
 }
 
 }

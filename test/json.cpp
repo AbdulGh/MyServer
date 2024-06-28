@@ -1,5 +1,3 @@
-//big todo in general: test/improve error cases
-
 #include <cassert>
 #include <cmath>
 #include <string_view>
@@ -18,6 +16,7 @@ int main() {
     Pair<"key2", double>,
     Pair<"key3", bool>
   >;
+
 
   FlatObject test1 {};
   test1.get<"key1">() = "hello";

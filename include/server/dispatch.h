@@ -15,7 +15,6 @@ class Server;
 
 class Dispatch {
 private:
-  static constexpr int threadPoolSize = 4; //todo!!!
   static constexpr int EPOLL_EVENT_FLAGS = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP;
   static constexpr int maxNotifications = 1000;
   epoll_event eventBuffer[maxNotifications];
@@ -36,6 +35,7 @@ private:
   void assumeClient(const int client);
   void dispatchRequest(Request&& request, Client& destination);
 public:
+  static constexpr int threadPoolSize = 6; 
   Dispatch(Server* parent);
   void work();
   void join();

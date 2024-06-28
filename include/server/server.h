@@ -12,12 +12,9 @@
 
 namespace MyServer {
 
-constexpr int numDispatchThreads = 2;
-//currentlty we may actually go over this, but by at most the # of dispatch threads - 1
-constexpr int threadPoolSize = 4;
-
 class Server {
 private:
+  static constexpr int numDispatchThreads = 2;
   Utils::ConcurrentQueue<int> incomingClientQueue {};
   std::array<HandlerMap, std::to_underlying(Request::Method::NUM_METHODS)> handlers {};
   int serverfd;
@@ -26,23 +23,27 @@ private:
 
   friend class Dispatch;
 
-  template<size_t...Is>
-  std::array<Dispatch, numDispatchThreads> makeDispatchThreads(std::index_sequence<Is...>);
-  std::array<Dispatch, numDispatchThreads> makeDispatchThreads();
+  template <typename ThreadType, size_t N, typename TupleType, size_t... Is>
+  static std::array<ThreadType, N> makeThreadsHelper(TupleType args, std::index_sequence<Is...>) {
+    return { ((void) Is, std::make_from_tuple<ThreadType>(args)) ...};
+  }
+  template <typename ThreadType, size_t N, typename... Args>
+  static std::array<ThreadType, N> makeThreads(Args... args) {
+    return makeThreadsHelper<ThreadType, N>(
+      std::forward_as_tuple(args...),
+      std::make_index_sequence<N>()
+    );
+  }
 
-  //todo
-  template<size_t...Is>
-  std::array<Worker, threadPoolSize> makeWorkerThreads(std::index_sequence<Is...>);
-  std::array<Worker, threadPoolSize> makeWorkerThreads();
-
-  std::array<Worker, threadPoolSize> workerThreads;
+  std::array<Worker, Dispatch::threadPoolSize> workerThreads;
   std::array<Dispatch, numDispatchThreads> dispatchThreads;
 
 public:
+  //todo these should be customisable
   static constexpr int port = 8675;
   Server():
-    dispatchThreads{makeDispatchThreads()},
-    workerThreads{makeWorkerThreads()}
+    dispatchThreads{makeThreads<Dispatch, numDispatchThreads>(this)},
+    workerThreads{makeThreads<Worker, Dispatch::threadPoolSize>()}
   {}
   Server(const Server&) = delete;
   Server(const Server&&) = delete;

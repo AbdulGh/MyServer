@@ -27,7 +27,7 @@ Client::IOState Client::handleRead() {
     }
     else {
       log<Logger::LogLevel::ERROR>("Failed to read from the client");
-      errorOut();
+      exit(true);
       return IOState::ERROR;
     }
   }
@@ -39,7 +39,7 @@ Client::IOState Client::handleRead() {
   readState.process(std::string_view(buf, readBytes));
   if (readState.isError()) {
     log<Logger::LogLevel::ERROR>("Could not parse http request");
-    errorOut();
+    exit(true);
     return IOState::ERROR;
   }
   return IOState::CONTINUE;
@@ -73,13 +73,13 @@ Client::IOState Client::handleWrite() {
     if (bytesOut < 0) {
       if (errno == EAGAIN || errno == EWOULDBLOCK) return IOState::WOULDBLOCK;
       else {
-        errorOut();
+        exit(true);
         return IOState::ERROR;
       }
     }
     else if (bytesOut == 0) {
-      //todo what does this case actually mean?
-      errorOut();
+      // not exactly sure what this means, if we get EPOLLIN and can't write any bytes
+      exit(true);
       return IOState::ERROR;
     }
 
@@ -89,7 +89,7 @@ Client::IOState Client::handleWrite() {
     if (written >= out.size()) {
       ++sequence;
       written = 0;
-      outgoing.popFront();
+      outgoing.erase(cbegin);
     }
   } while (!outgoing.empty() && allotment > 0) ;
 
@@ -101,7 +101,7 @@ Client::IOState Client::handleWrite() {
 
 void Client::addOutgoing(unsigned long sequence, std::string&& outboundStr) {
   std::lock_guard<std::mutex> lock(queueMutex);
-  if (!errored) {
+  if (!blocked) {
     //todo check insert_or_assign for rvalue stuff
     outgoing.insert_or_assign(sequence, std::move(outboundStr));
   }
@@ -117,8 +117,8 @@ bool Client::isClosing() const {
   return closing;
 }
 
-bool Client::isErrored() const {
-  return errored;
+bool Client::isBlocked() const {
+  return blocked;
 }
 
 unsigned long Client::incrementSequence() {
@@ -137,13 +137,13 @@ void Client::close() {
   fd = -1;
 }
 
-void Client::errorOut() {
+void Client::exit(bool withError) {
   log<Logger::LogLevel::ERROR>("Client error");
   std::lock_guard<std::mutex> lock(queueMutex);
-  errored = true;
+  blocked = true;
   outgoing.clear(); 
-  //todo - sometimes this is actually a 5xx...
-  // outgoing.push("HTTP/1.1 400 Bad Request");
+  resetSequence();
+  if (withError) outgoing[0] = "HTTP/1.1 400 Bad Request";
   initiateShutdown();
 }
 

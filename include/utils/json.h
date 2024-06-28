@@ -33,67 +33,55 @@ struct Member<T, std::variant<Ts...>> : std::disjunction<std::is_same<T, Ts>...>
 template <typename T>
 concept JSONAtom = Member<T, std::variant<std::string, double, bool>>::value;
 
-template <typename... Ts>
-struct ContentTypeWrapper {};
+//todo require default constructible
+template <typename Me, typename ContentType>
+struct JSONBase
+{
+  ContentType contents;
 
-template <JSONAtom T>
-struct ContentTypeWrapper<T> {
-  using type = T;
-};
+  // template <typename Self>
+  // ContentType helper(this Self&&, std::string_view& str) {
+  //   return Self::consumeFromJSON(str);
+  // }
 
-template <typename... Ts>
-using ContentType = ContentTypeWrapper<Ts...>::type;
-
-// should only be used in one of its specialised forms
-template <typename... Ts>
-class JSON {
-public:
-  ContentType<Ts...> contents;
-
-  JSON() = delete;
-
-  JSON(std::string_view& str): contents{consumeFromJSON(str)} {}
-  JSON(const Request& req): contents{[&req]() {
+  JSONBase() {};
+  JSONBase(std::string_view& str): contents{ Me::consumeFromJSON(str) } {}
+  JSONBase(const Request& req): contents{[&req, this]() {
     std::string_view bodysv{ req.body };
-    return consumeFromJSON(bodysv);
+    return Me::consumeFromJSON(bodysv);
   }()} {}
 
-  JSON(const JSON&) = default;
-  JSON(JSON&&) = default;
-  JSON& operator=(const JSON& other) = default;
-  JSON& operator=(JSON&& other) = default;
+  JSONBase(const JSONBase&) = default;
+  JSONBase(JSONBase&&) = default;
 
-  JSON(const ContentType<Ts...>& other) {
+  JSONBase(const ContentType& other) {
     contents = other; 
   }   
-  JSON(ContentType<Ts...>&& other) {
+  JSONBase(ContentType&& other) {
     contents = std::move(other);
   }   
 
-  static ContentType<Ts...> consumeFromJSON(std::string_view&) {
-    static_assert(false, "consumeFromJSON should be specialised");
+  JSONBase& operator=(const JSONBase& other) = default;
+  JSONBase& operator=(JSONBase&& other) = default;
+  JSONBase& operator=(const ContentType& newContents) {
+    contents = newContents;
+    return *this;
+  }
+  JSONBase& operator=(ContentType&& newContents) {
+    contents = std::move(newContents);
+    return *this;
   }
 
-  friend bool operator==(const JSON<Ts...>& lhs, const JSON<Ts...>& rhs) {
+  friend bool operator==(const JSONBase& lhs, const JSONBase& rhs) {
     return lhs.contents == rhs.contents;
   };
-
-  //useful for JSON<std::string> etc
-  JSON& operator=(const ContentType<Ts...>& newContents) {
-    contents = newContents;
-    return *this;
-  }
-  JSON& operator=(ContentType<Ts...>&& newContents) {
-    contents = newContents;
-    return *this;
-  }
-
-  friend bool operator==(const JSON<Ts...>& lhs, ContentType<Ts...> nested) {
+  friend bool operator==(const JSONBase& lhs, ContentType nested) {
     return lhs.contents == nested;
   }
-
-  std::string toString() const = delete;
 };
+
+template <typename... Ts>
+struct JSON{};
 
 //useful so the user doesn't need to write JSON<Pair<"key", JSON<double>>
 template <typename... Ts>
@@ -111,6 +99,18 @@ static_assert(
 std::is_same_v<IdempotentJSONTag_t<JSON<std::string>>, IdempotentJSONTag_t<std::string>>,
 "IdempotentJSONTag_t is broken"
 );
+
+// 'simple' atomic types (string, double, bool)
+template <typename ContentType>
+class JSON<ContentType>: public JSONBase<JSON<ContentType>, ContentType> {
+public:
+  using JSONBase<JSON<ContentType>, ContentType>::JSONBase;
+  using JSONBase<JSON<ContentType>, ContentType>::operator=;
+  static ContentType consumeFromJSON(std::string_view&) {
+    static_assert(false, "consumeFromJSON should be specialised");
+  }
+  std::string toString() const = delete;
+};
 
 // A json is:
 // - a string
@@ -216,25 +216,11 @@ struct ListOf {
 };
 
 template <typename T>
-struct JSON<ListOf<T>> {
+struct JSON<ListOf<T>>: public JSONBase<JSON<ListOf<T>>, std::vector<IdempotentJSONTag_t<T>>> {
+  using JSONBase<JSON<ListOf<T>>, std::vector<IdempotentJSONTag_t<T>>>::operator=;
+  using JSONBase<JSON<ListOf<T>>, std::vector<IdempotentJSONTag_t<T>>>::JSONBase;
   using IdempotentJSONType = IdempotentJSONTag_t<T>;
   using VectorType = std::vector<IdempotentJSONType>;
-
-  VectorType contents {};
-
-  //todo
-  JSON() {}
-  JSON(const JSON&) {} 
-  JSON(JSON&&) = default;
-  JSON& operator=(const JSON& other) {
-    contents = other.contents;
-    return *this;
-  };
-  JSON& operator=(JSON&&) = default;
-  JSON(VectorType&& list): contents{std::move(list)} {}
-
-  JSON(std::string_view& json): contents{consumeFromJSON(json)} {}
-  // JSON(const Request& req): contents{consumeFromJSON(std::string_view{req.body})} {}
 
   static VectorType consumeFromJSON(std::string_view& json) {
     VectorType parsedContents {};
@@ -264,18 +250,18 @@ struct JSON<ListOf<T>> {
   }
 
   IdempotentJSONType& operator[](size_t index) {
-    return contents[index];
+    return this->contents[index];
   }
 
   std::string toString() {
-    if (contents.size() == 0) return "[]";
+    if (this->contents.size() == 0) return "[]";
 
     using IdempotentJSONType = IdempotentJSONTag_t<T>;
     std::stringstream out {};
-    out << "[" << contents[0].toString();
+    out << "[" << this->contents[0].toString();
 
-    for (int i = 1; i < contents.size(); ++i) {
-      out << "," << contents[i].toString();
+    for (int i = 1; i < this->contents.size(); ++i) {
+      out << "," << this->contents[i].toString();
     }
 
     out << "]";
@@ -307,21 +293,11 @@ struct Pair {
 
 //todo - sort the keys for proper comparison?
 template <StringLiteral... Ks, typename... Vs>
-class JSON<Pair<Ks, Vs>...> {
+class JSON<Pair<Ks, Vs>...>: public JSONBase<JSON<Pair<Ks, Vs>...>, std::tuple<std::optional<IdempotentJSONTag_t<Vs>>...>> {
 public:
+  using JSONBase<JSON<Pair<Ks, Vs>...>, std::tuple<std::optional<IdempotentJSONTag_t<Vs>>...>>::operator=;
   static constexpr std::array<std::string_view, sizeof...(Ks)> keys = { Ks.contents... };
   using ValueTupleType = std::tuple<std::optional<IdempotentJSONTag_t<Vs>>...>;
-  ValueTupleType contents;
-
-  //todo
-  JSON(){};
-  JSON(const JSON&) = default;
-  JSON(JSON&&) = default;
-  JSON& operator=(const JSON&) = default;
-  JSON& operator=(JSON&&) = default;
-
-  // JSON(const Request& req): contents{consumeFromJSON(std::string_view{req.body})} {}
-  JSON(std::string_view& json): contents{consumeFromJSON(json)} {}
 
   static ValueTupleType consumeFromJSON(std::string_view& str) {
     ValueTupleType newContents {};
@@ -380,11 +356,6 @@ public:
     return "{" + toStringHelper<0>(false);
   }
 
-  //todo
-  friend bool operator==(const JSON<Pair<Ks, Vs>...>& lhs, const JSON<Pair<Ks, Vs>...>& rhs) {
-    return lhs.contents == rhs.contents;
-  }
-
   /* doesnt work :(
   template <size_t index = 0>
   constexpr auto& operator[](const std::string_view& key) {
@@ -397,7 +368,7 @@ public:
   template <StringLiteral key>
   auto& get() {
     constexpr size_t index = findIndex<key>();
-    return std::get<index>(contents);
+    return std::get<index>(this->contents);
   }
 
 private:
@@ -426,22 +397,17 @@ private:
     if constexpr (index >= sizeof...(Ks)) {
       return "}";
     }
-    else if (!std::get<index>(contents)) {
+    else if (!std::get<index>(this->contents)) {
       return toStringHelper<index + 1>(withComma);
     }
     else {
       std::stringstream out;
       if (withComma) out << ','; 
-      out << "\"" << keys[index] << "\":" << std::get<index>(contents)->toString();
+      out << "\"" << keys[index] << "\":" << std::get<index>(this->contents)->toString();
       out << toStringHelper<index+1>(true);
       return out.str();
     }
   }
-};
-
-template <StringLiteral... Ks, typename... Vs>
-struct ContentTypeWrapper<Pair<Ks, Vs>...> {
-  using type = JSON<Pair<Ks, Vs>...>::ValueTupleType;
 };
 
 //just a wrapper
@@ -452,20 +418,17 @@ struct Nullable {
 struct Null {};
 
 template <>
-struct JSON<Null> {
-  //todo
-  JSON(){};
-  JSON(const JSON&) = default;
-  JSON(JSON&&) = default;
-  JSON& operator=(const JSON&) = default;
-  JSON& operator=(JSON&&) = default;
+struct JSON<Null>: public JSONBase<JSON<Null>, Null> {
+  static Null consumeFromJSON(std::string_view& str) {
+    if (str.substr(0, 4) != "null") {
+      throw HTTPException(UNPROCESSABLE_ENTITY, "expected 'null'");
+    }
+    stripWhitespace(str, 4);
+    return Null{};
+  }
 
   friend constexpr bool operator==(const JSON<Null>&, const JSON<Null>&) {
     return true;
-  }
-
-  friend constexpr bool operator!=(const JSON<Null>&, const JSON<Null>&) {
-    return false;
   }
 
   std::string toString() const {
@@ -474,62 +437,36 @@ struct JSON<Null> {
 };
 
 template <typename T> 
-struct JSON<Nullable<T>> {
+struct JSON<Nullable<T>>: public JSONBase<JSON<Nullable<T>>, std::variant<IdempotentJSONTag_t<T>, JSON<Null>>> {
+  using JSONBase<JSON<Nullable<T>>, std::variant<IdempotentJSONTag_t<T>, JSON<Null>>>::operator=;
   using NestedType = IdempotentJSONTag_t<T>;
-  std::variant<NestedType, JSON<Null>> contents;
 
-  //todo
-  JSON(){};
-  JSON(const JSON&) = default;
-  JSON(JSON&&) = default;
-  JSON& operator=(const JSON&) = default;
-  JSON& operator=(JSON&&) = default;
-
-  JSON(std::string_view& str): contents{consumeFromJSON(str)} {}
-  // JSON(const Request& req): contents{consumeFromJSON(std::string_view{req.body})} {}
-
-  std::variant<NestedType, JSON<Null>> consumeFromJSON(std::string_view& str) {
+  static std::variant<NestedType, JSON<Null>> consumeFromJSON(std::string_view& str) {
     stripWhitespace(str);
     if (str.size() == 0 || str[0] != 'n') return NestedType{str};
-    else {
-      if (str.substr(0, 4) != "null") {
-        throw HTTPException(UNPROCESSABLE_ENTITY, "expected 'null'");
-      }
-      stripWhitespace(str, 4);
-      return JSON<Null>{};
-    }
+    else return JSON<Null>{str};
   }
 
   operator bool() const {
-    return !std::holds_alternative<JSON<Null>>(contents);
+    return !std::holds_alternative<JSON<Null>>(this->contents);
   }
 
   NestedType& operator*() {
-    return std::get<NestedType>(contents);
+    return std::get<NestedType>(this->contents);
   }
 
   const NestedType& operator*() const {
-    return std::get<NestedType>(contents);
+    return std::get<NestedType>(this->contents);
   }
 
   NestedType* operator->() {
     return &(this->operator*());
   }
 
-  template <typename AccessType>
-  auto& get() {
-    return std::get<IdempotentJSONTag_t<AccessType>>(contents);
-  }
-
   std::string toString() const {
     if (*this) return this->operator*().toString();
     return "null";
   }
-};
-
-template <typename T> 
-struct ContentTypeWrapper<JSON<Nullable<T>>> {
-  using type = std::variant<typename JSON<Nullable<T>>::NestedType, JSON<Null>>;
 };
 
 /*** 'general' (but still homogeneous) maps ***/
@@ -540,7 +477,7 @@ struct MapOf {
 };
 
 template <typename T> 
-struct JSON<MapOf<T>>: std::unordered_map<std::string, IdempotentJSONTag_t<T>> {
+struct JSON<MapOf<T>>: public std::unordered_map<std::string, IdempotentJSONTag_t<T>> {
   using JSONType = IdempotentJSONTag_t<T>;
   using MapType = std::unordered_map<std::string, JSONType>;
 
@@ -601,11 +538,6 @@ struct JSON<MapOf<T>>: std::unordered_map<std::string, IdempotentJSONTag_t<T>> {
     out << '}';
     return out.str();
   }
-};
-
-template <typename T> 
-struct ContentTypeWrapper<JSON<MapOf<T>>> {
-  using type = std::unordered_map<std::string, T>;
 };
 
 }

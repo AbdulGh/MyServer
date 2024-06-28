@@ -30,7 +30,7 @@ void Dispatch::work() {
       for (const auto& [_, client]: clients) {
         pendingClients += client.isPending();
         closingClients += client.isClosing();
-        erroredClients += client.isErrored();
+        erroredClients += client.isBlocked();
       }
 
       int read = 0; int write = 0; int rdhup = 0;
@@ -90,10 +90,7 @@ void Dispatch::work() {
         dispatchRequest(std::move(request), client);
       }
 
-      if (notifications & EPOLLHUP) {
-        //todo
-        client.errorOut();
-      }
+      if (notifications & EPOLLHUP) client.exit(false);
 
       if (notifications & EPOLLOUT) {
         if (client.handleWrite() == Client::IOState::WOULDBLOCK) notifications ^= EPOLLOUT;
@@ -153,7 +150,7 @@ void Dispatch::dispatchRequest(Request&& request, Client& client) {
   auto handlerIt = methodMap.find(request.endpoint);
   if (handlerIt == methodMap.end()) {
     Logger::log<Logger::LogLevel::DEBUG>("Couldn't find the handler");
-    //todo throw 404
+    client.addOutgoing(client.incrementSequence(), "HTTP/1.1 404 Not Found\r\nContent-Length: 0");
   }
   else {
     server->workerThreads[dist(eng)].add(

@@ -18,12 +18,12 @@ private:
   HTTP::RequestParser readState {};
   //we use the map as a queue
   std::mutex queueMutex {};
-  Utils::OrderedConcurrentMap<unsigned long, std::string> outgoing;
+  std::map<unsigned long, std::string> outgoing;
   int written {0};
   int fd {-1};
   std::atomic<int> pending {0};
   bool closing {false};
-  bool errored {false};
+  bool blocked {false}; //client is no longer reading
 
   unsigned long sequence = 0;
   void resetSequence();
@@ -41,12 +41,11 @@ public:
   IOState handleWrite();
   std::vector<Request> takeRequests();
 
-  //todo incrementSequence and its usage feels very coupled
   unsigned long incrementSequence();
   bool isPending() const;
   bool isClosing() const;
-  bool isErrored() const;
-  void errorOut();
+  bool isBlocked() const;
+  void exit(bool withError);
 
   //we intend for this to just sit in the fd->client map in the owning dispatch thread
   Client(Client&&) = delete;
