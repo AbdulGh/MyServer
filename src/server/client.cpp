@@ -51,6 +51,7 @@ Client::IOState Client::handleRead() {
 // and sequence does not need to be atomic as we (dispatch thread) are the only people who touch it
 Client::IOState Client::handleWrite() {
   if (outgoing.empty()) return IOState::CONTINUE;
+
   // for example, the use of cbegin leads to an eventual popFront - seems suspect,
   // but something will only 'cut in line' if we are out of sequence anyway, and the following if will break
   // in general we rely on [container.requirements.dataraces] and the fact that map iterators are not invalidated on insertion
@@ -95,16 +96,16 @@ Client::IOState Client::handleWrite() {
   if (outgoing.empty() && pending == 0) {
     sequence = 0;
   }
-
   return IOState::CONTINUE;
 }
 
 void Client::addOutgoing(unsigned long sequence, std::string&& outboundStr) {
   std::lock_guard<std::mutex> lock(queueMutex);
+  if (!errored) {
+    //todo check insert_or_assign for rvalue stuff
+    outgoing.insert_or_assign(sequence, std::move(outboundStr));
+  }
   --pending;
-  if (errored) return;
-  //todo check insert_or_assign for rvalue stuff
-  outgoing.insert_or_assign(sequence, std::move(outboundStr));
 }
 
 bool Client::isPending() const {

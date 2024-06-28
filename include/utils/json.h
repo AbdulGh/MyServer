@@ -357,9 +357,7 @@ public:
       stripWhitespace(str, 1);
       //str is now at the start of a value
       //set here will recursively call the appropriate json dto parser
-      if (!set(newContents, key, str)) {
-        //todo allow option to enforce strict interpretation
-      }
+      set(newContents, key, str);
 
       stripWhitespace(str);
       if (str.size() == 0) {
@@ -413,7 +411,7 @@ private:
 
   //maybe not intuitive that this method, like all the others, consumes from the json
   //(but it is private)
-  template <size_t index = 0>
+  template <size_t index = 0> [[maybe_unused]]
   static bool set(ValueTupleType& tuple, std::string_view key, std::string_view& value) {
     if constexpr (index == sizeof...(Ks)) return false;
     else if (keys[index] == key) {

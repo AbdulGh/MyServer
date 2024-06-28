@@ -8,6 +8,7 @@
 
 #include "server/dispatch.h"
 #include "server/server.h"
+#include "server/task.h"
 #include "utils/logger.h"
 #include "server/client.h"
 
@@ -41,14 +42,14 @@ void Dispatch::work() {
 
       Logger::log<Logger::LogLevel::INFO>(
         std::format(
-          "Status update: {} clients, of which {} are pending, and {} are closing, and {} are errored. {} notifications and {} active worker threads.",
-          clients.size(), pendingClients, closingClients, erroredClients, pendingNotifications.size(), server->numWorkerThreads.load()
+          "Status update: {} clients, of which {} are pending, and {} are closing, and {} are errored. {} notifications.",
+          clients.size(), pendingClients, closingClients, erroredClients, pendingNotifications.size()
         )
       );
 
       Logger::log<Logger::LogLevel::INFO>(
         std::format(
-          "{} want read, {} want write, {} rdhuped.",
+          "{} want read, {} want write, {} rdhuped",
           read, write, rdhup
         )
       );
@@ -145,6 +146,7 @@ void Dispatch::assumeClient(int clientfd) {
   //(https://devblogs.microsoft.com/oldnewthing/20231023-00/?p=108916)
 }
 
+//dispatch thread may block here...
 void Dispatch::dispatchRequest(Request&& request, Client& client) {
   Logger::log<Logger::LogLevel::DEBUG>("Dispatching a request");
   const HandlerMap& methodMap = server->handlers[std::to_underlying(request.method)];
@@ -154,22 +156,12 @@ void Dispatch::dispatchRequest(Request&& request, Client& client) {
     //todo throw 404
   }
   else {
-    Task newTask = Task{
-      .destination = &client, .sequence = client.incrementSequence(),
-      .request = std::move(request), .handler = handlerIt->second
-    };
-    if (server->numWorkerThreads < threadPoolSize) {
-      std::thread(
-        &Server::worker,
-        server,
-        std::move(newTask)
-      ).detach();
-    }
-    else {
-      Logger::log<Logger::LogLevel::DEBUG>("Threadpool busy - enqueuing task");
-      //only place the dispatch thread may block...
-      server->taskQueue.add(newTask);
-    }
+    server->workerThreads[dist(eng)].add(
+      Task{
+        .destination = &client, .sequence = client.incrementSequence(),
+        .request = std::move(request), .handler = handlerIt->second
+      }
+    );
   }
 }
 

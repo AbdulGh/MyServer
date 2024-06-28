@@ -2,6 +2,7 @@
 #define DISPATCH_H
 
 #include <chrono>
+#include <random>
 #include <sys/epoll.h>
 #include <thread>
 #include <unordered_map>
@@ -14,6 +15,7 @@ class Server;
 
 class Dispatch {
 private:
+  static constexpr int threadPoolSize = 4; //todo!!!
   static constexpr int EPOLL_EVENT_FLAGS = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP;
   static constexpr int maxNotifications = 1000;
   epoll_event eventBuffer[maxNotifications];
@@ -24,10 +26,12 @@ private:
   };
 
   std::thread thread;
-  //todo
   std::unordered_map<int, Client> clients {};
   std::unordered_map<int, unsigned> pendingNotifications {};
   int epollfd {-1};
+
+  std::minstd_rand eng {std::random_device{}()};
+  std::uniform_int_distribution<> dist{0, threadPoolSize - 1};
 
   void assumeClient(const int client);
   void dispatchRequest(Request&& request, Client& destination);
