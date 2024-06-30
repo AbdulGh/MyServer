@@ -26,13 +26,6 @@ constexpr void stripWhitespace(std::string_view& str, int from = 0) {
 
 namespace MyServer::Utils::JSON {
 
-template <typename... Ts>
-struct Member;
-template <typename T, typename... Ts>
-struct Member<T, std::variant<Ts...>> : std::disjunction<std::is_same<T, Ts>...> {};
-template <typename T>
-concept JSONAtom = Member<T, std::variant<std::string, double, bool>>::value;
-
 //todo require default constructible
 template <typename Me, typename ContentType>
 struct JSONBase
@@ -101,7 +94,16 @@ std::is_same_v<IdempotentJSONTag_t<JSON<std::string>>, IdempotentJSONTag_t<std::
 );
 
 // 'simple' atomic types (string, double, bool)
-template <typename ContentType>
+struct Null {}; //JSON<Null> to follow
+
+template <typename... Ts>
+struct Member;
+template <typename T, typename... Ts>
+struct Member<T, std::variant<Ts...>> : std::disjunction<std::is_same<T, Ts>...> {};
+template <typename T>
+concept JSONAtom = Member<T, std::variant<std::string, double, bool, Null>>::value;
+
+template <JSONAtom ContentType>
 class JSON<ContentType>: public JSONBase<JSON<ContentType>, ContentType> {
 public:
   using JSONBase<JSON<ContentType>, ContentType>::JSONBase;
@@ -131,7 +133,7 @@ inline std::string JSON<std::string>::consumeFromJSON(std::string_view& json) {
   }
   std::string result {json.substr(1, end - 1)};
   json.remove_prefix(end + 1);
-  return result; //nrvo
+  return result;
 };
 
 template <>
@@ -295,9 +297,10 @@ struct Pair {
 template <StringLiteral... Ks, typename... Vs>
 class JSON<Pair<Ks, Vs>...>: public JSONBase<JSON<Pair<Ks, Vs>...>, std::tuple<std::optional<IdempotentJSONTag_t<Vs>>...>> {
 public:
-  using JSONBase<JSON<Pair<Ks, Vs>...>, std::tuple<std::optional<IdempotentJSONTag_t<Vs>>...>>::operator=;
-  static constexpr std::array<std::string_view, sizeof...(Ks)> keys = { Ks.contents... };
   using ValueTupleType = std::tuple<std::optional<IdempotentJSONTag_t<Vs>>...>;
+  using JSONBase<JSON<Pair<Ks, Vs>...>, ValueTupleType>::operator=;
+
+  static constexpr std::array<std::string_view, sizeof...(Ks)> keys = { Ks.contents... };
 
   static ValueTupleType consumeFromJSON(std::string_view& str) {
     ValueTupleType newContents {};
@@ -415,7 +418,6 @@ template <typename T>
 struct Nullable {
   using type = T;
 };
-struct Null {};
 
 template <>
 struct JSON<Null>: public JSONBase<JSON<Null>, Null> {
@@ -438,8 +440,8 @@ struct JSON<Null>: public JSONBase<JSON<Null>, Null> {
 
 template <typename T> 
 struct JSON<Nullable<T>>: public JSONBase<JSON<Nullable<T>>, std::variant<IdempotentJSONTag_t<T>, JSON<Null>>> {
-  using JSONBase<JSON<Nullable<T>>, std::variant<IdempotentJSONTag_t<T>, JSON<Null>>>::operator=;
   using NestedType = IdempotentJSONTag_t<T>;
+  using JSONBase<JSON<Nullable<T>>, std::variant<NestedType, JSON<Null>>>::operator=;
 
   static std::variant<NestedType, JSON<Null>> consumeFromJSON(std::string_view& str) {
     stripWhitespace(str);

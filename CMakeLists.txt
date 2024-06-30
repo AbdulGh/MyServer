@@ -11,7 +11,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_BUILD_TYPE Debug)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wfatal-errors -v")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wfatal-errors")
 
 add_library(mainlib src/server/parseHTTP.cpp src/server/server.cpp src/server/dispatch.cpp src/server/client.cpp src/server/worker.cpp)
 target_include_directories(mainlib PUBLIC include)

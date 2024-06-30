@@ -17,7 +17,6 @@ int main() {
     Pair<"key3", bool>
   >;
 
-
   FlatObject test1 {};
   test1.get<"key1">() = "hello";
   test1.get<"key2">() = 2.17;
