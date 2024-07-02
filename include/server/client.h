@@ -20,7 +20,6 @@ private:
   std::mutex queueMutex {};
   std::map<unsigned long, std::string> outgoing;
   int written {0};
-  int fd {-1};
   std::atomic<int> pending {0};
   bool closing {false};
   bool blocked {false}; //client is no longer reading
@@ -34,11 +33,14 @@ private:
   void log(const std::string&);
   
 public:
-  enum class IOState { CONTINUE, ERROR, WOULDBLOCK };
+  int fd {-1};//todo
+  enum class IOState { CONTINUE, ERROR, WOULDBLOCK, DONE };
   Client(int fd): fd{fd} {};
 
   IOState handleRead();
   IOState handleWrite();
+  //used on shutdown to finish writing the currently progress response, if any
+  IOState writeOne();
   std::vector<Request> takeRequests();
 
   unsigned long incrementSequence();

@@ -5,6 +5,7 @@ project(server)
 #v14 required to deduce this
 #todo... doesn't compile on clang, it doesn't like some of the json template stuff
 set(CMAKE_CXX_COMPILER g++-14)
+# set(CMAKE_CXX_COMPILER clang++)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

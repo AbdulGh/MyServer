@@ -14,18 +14,22 @@ namespace MyServer {
 
 class Server {
 private:
-  static constexpr int numDispatchThreads = 2;
+  static constexpr int numDispatchThreads = 2; //todo should be customisable
   Utils::ConcurrentQueue<int> incomingClientQueue {};
   std::array<HandlerMap, std::to_underlying(Request::Method::NUM_METHODS)> handlers {};
   int serverfd;
 
   void handover(int client);
 
+  static bool interrupted;
+  static std::vector<Server*> servers;
+  static void sigint(int);
+
   friend class Dispatch;
 
   template <typename ThreadType, size_t N, typename TupleType, size_t... Is>
   static std::array<ThreadType, N> makeThreadsHelper(TupleType args, std::index_sequence<Is...>) {
-    return { ((void) Is, std::make_from_tuple<ThreadType>(args)) ...};
+    return { ((void)Is, std::make_from_tuple<ThreadType>(args))...};
   }
   template <typename ThreadType, size_t N, typename... Args>
   static std::array<ThreadType, N> makeThreads(Args... args) {
@@ -39,8 +43,6 @@ private:
   std::array<Dispatch, numDispatchThreads> dispatchThreads;
 
 public:
-  //todo these should be customisable
-  static constexpr int port = 8675;
   Server():
     dispatchThreads{makeThreads<Dispatch, numDispatchThreads>(this)},
     workerThreads{makeThreads<Worker, Dispatch::threadPoolSize>()}
@@ -52,9 +54,7 @@ public:
 
   void registerHandler(std::string endpoint, Request::Method method, Handler handler);
 
-  [[noreturn]]
-  void go();
-  void stop();
+  void go(int port);
 };
 
 }

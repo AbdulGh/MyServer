@@ -1,3 +1,4 @@
+#include <csignal>
 #include <cstring>
 #include <fcntl.h>
 #include <format>
@@ -5,6 +6,7 @@
 #include <sys/epoll.h>
 #include <unistd.h>
 #include <utility>
+#include <set>
 
 #include "server/dispatch.h"
 #include "server/server.h"
@@ -13,13 +15,13 @@
 #include "server/client.h"
 
 namespace MyServer {
-
-Dispatch::Dispatch(Server* server): server {server} {
+//todo handle write errors
+Dispatch::Dispatch(Server* server): server{server} {
   epollfd = insist(epoll_create1(0), "Couldn't create epoll");
-  thread = std::thread(&Dispatch::work, this);
+  thread = std::jthread(std::bind_front(&Dispatch::work, this));
 }
 
-void Dispatch::work() {
+void Dispatch::work(std::stop_token token) {
   for(;;) {
     auto now = std::chrono::system_clock::now();
     if (now > nextStatusUpdate) {
@@ -57,8 +59,18 @@ void Dispatch::work() {
       nextStatusUpdate = now + std::chrono::seconds{5};
     } 
 
+    if (token.stop_requested()) {
+      shutdown();
+      return;
+    }
+
     //take new clients
     if (clients.empty()) {
+      if (token.stop_requested()) {
+        Logger::log<Logger::LogLevel::INFO>("Dispatch thread exiting");
+        break;
+      }
+      //todo - handling shutdown?
       Logger::log<Logger::LogLevel::INFO>("Dispatch thread waiting for work");
       server->incomingClientQueue.wait();
     }
@@ -71,7 +83,7 @@ void Dispatch::work() {
     while (notificationIt != pendingNotifications.end()) {
       int fd = notificationIt->first;
       auto clientIt = clients.find(fd);
-      
+
       if (clientIt == clients.end()) {
         Logger::log<Logger::LogLevel::ERROR>("Processed notification about a missing client");
         notificationIt = pendingNotifications.erase(notificationIt);
@@ -106,15 +118,23 @@ void Dispatch::work() {
       }
       else ++notificationIt;
     }
+    getNotifications();
+  }
+}
 
-    //check new notifications
-    ssize_t count = epoll_wait(epollfd, eventBuffer, maxNotifications, 0);
-    if (count < 0) {
+void Dispatch::getNotifications() {
+  //check new notifications
+  ssize_t count = epoll_wait(epollfd, eventBuffer, maxNotifications, 0);
+  if (count < 0) {
+    if (errno == EINTR) {
+      Logger::log<Logger::LogLevel::ERROR>("EINTR during epoll_wait - checking stop token");
+    }
+    else {
       Logger::log<Logger::LogLevel::ERROR>("Couldn't epoll_wait - may miss notifications!");
     }
-    else for (int i = 0; i < count; ++i) {
-      pendingNotifications[eventBuffer[i].data.fd] = eventBuffer[i].events;
-    }
+  }
+  else for (int i = 0; i < count; ++i) {
+    pendingNotifications[eventBuffer[i].data.fd] = eventBuffer[i].events;
   }
 }
 
@@ -126,7 +146,7 @@ void Dispatch::assumeClient(int clientfd) {
     fcntl(clientfd, F_SETFL, insist(fcntl(clientfd, F_GETFL), "could not get file flags") | O_NONBLOCK),
     "could not set file flags"
   );
-   
+
   epoll_event event {
     .events = EPOLL_EVENT_FLAGS | EPOLLET,
     .data = { .fd = clientfd }
@@ -160,6 +180,74 @@ void Dispatch::dispatchRequest(Request&& request, Client& client) {
       }
     );
   }
+}
+
+void Dispatch::shutdown() {
+  exiting.test_and_set();
+  exiting.notify_all();
+  //diminished event loop just to handle remaining outgoing
+  bool finished = false;
+  while (!finished) {
+    finished = true;
+
+    auto notificationIt = pendingNotifications.begin();
+    while (notificationIt != pendingNotifications.end()) {
+      int fd = notificationIt->first;
+      auto clientIt = clients.find(fd);
+
+      if (clientIt == clients.end()) {
+        Logger::log<Logger::LogLevel::ERROR>("Processed notification about a missing client");
+        notificationIt = pendingNotifications.erase(notificationIt);
+        continue;
+      }
+      Client& client = clientIt->second;
+
+      unsigned& notifications = notificationIt->second;
+
+      if (notifications & EPOLLOUT) {
+        Client::IOState state = client.writeOne();
+        if (state != Client::IOState::DONE) finished = false;
+        if (state != Client::IOState::CONTINUE) {
+          notifications = 0;
+          if (state == Client::IOState::ERROR) {
+            //not really a problem, we just wont bother finishing the response
+            Logger::log<Logger::LogLevel::ERROR>("Client errored during shutdown");
+            client.exit(true);
+          }
+        } 
+      }
+      else notifications = 0u;
+
+      if (!notifications) {
+        notificationIt = pendingNotifications.erase(notificationIt);
+      }
+      else ++notificationIt;
+    }
+
+    getNotifications();
+  }
+
+  Logger::log<Logger::LogLevel::INFO>("Finished writing to clients, waiting for worker threads to exit");
+  for (const auto& worker: server->workerThreads) {
+    worker.waitForExit();
+  }
+
+  Logger::log<Logger::LogLevel::INFO>("Clearing clients");
+  clients.clear();
+
+  Logger::log<Logger::LogLevel::INFO>("Clients closed, dispatch thread exiting");
+}
+
+void Dispatch::requestStop() {
+  thread.request_stop();
+}
+
+void Dispatch::acknowledgeShutdown() {
+  exiting.wait(false);
+}
+
+void Dispatch::join() {
+  thread.join();
 }
 
 Dispatch::~Dispatch() {

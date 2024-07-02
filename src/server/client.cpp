@@ -99,6 +99,25 @@ Client::IOState Client::handleWrite() {
   return IOState::CONTINUE;
 }
 
+Client::IOState Client::writeOne() {
+  if (written == 0) return IOState::DONE;
+  const std::string& out = outgoing.cbegin()->second;
+
+  size_t desired = std::min(out.size() - written, CHUNKSIZE);
+  ssize_t bytesOut = write(fd, out.data() + written, desired);
+
+  if (bytesOut <= 0) {
+    if (errno == EAGAIN || errno == EWOULDBLOCK) return IOState::WOULDBLOCK;
+    else {
+      exit(true);
+      return IOState::ERROR;
+    }
+  }
+
+  if (written >= out.size()) return IOState::DONE;
+  return IOState::CONTINUE;
+}
+
 void Client::addOutgoing(unsigned long sequence, std::string&& outboundStr) {
   std::lock_guard<std::mutex> lock(queueMutex);
   if (!blocked) {
@@ -133,20 +152,25 @@ void Client::close() {
   if (fd < 0) {
     log<Logger::LogLevel::FATAL> ("(Application error) Tried to close a closed socket");
   }
+  //todo log errors
   ::close(fd);
   fd = -1;
 }
 
+//todo rename
 void Client::exit(bool withError) {
-  log<Logger::LogLevel::ERROR>("Client error");
   std::lock_guard<std::mutex> lock(queueMutex);
   blocked = true;
   outgoing.clear(); 
   resetSequence();
-  if (withError) outgoing[0] = "HTTP/1.1 400 Bad Request";
+  if (withError) {
+    log<Logger::LogLevel::ERROR>("Client error");
+    outgoing[0] = "HTTP/1.1 400 Bad Request";
+  }
   initiateShutdown();
 }
 
+//todo this may be silly
 void Client::initiateShutdown() {
   log<Logger::LogLevel::DEBUG>("Initiating client shutdown");
   closing = true;

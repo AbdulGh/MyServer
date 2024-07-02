@@ -376,7 +376,7 @@ public:
 
 private:
   template <StringLiteral key>
-  consteval size_t findIndex() {
+  static constexpr size_t findIndex() {
     for (size_t i = 0; i < sizeof...(Ks); ++i) {
       if (key.contents == keys[i]) return i;
     }

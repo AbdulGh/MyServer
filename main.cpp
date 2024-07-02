@@ -102,6 +102,6 @@ int main()
     }
   );
 
-  server.go();
+  server.go(8675);
   return 0;
 }

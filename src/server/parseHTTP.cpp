@@ -19,7 +19,7 @@ void RequestParser::reset() {
 }
 
 void RequestParser::commitAndContinue(std::string_view input) {
-  Logger::log<Logger::LogLevel::INFO>("Parsed a HTTP request");
+  Logger::log<Logger::LogLevel::DEBUG>("Parsed a HTTP request");
   parsedRequests.push_back(std::move(currentRequest));
   reset();
   process(input);

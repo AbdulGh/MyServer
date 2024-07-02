@@ -12,12 +12,15 @@ class Worker
 private:
   std::mutex queueMutex {};
   std::queue<Task> taskQueue {};
-  //managed by same mutex
+  //managed by the above mutex
   bool deadOrDying {true};
+  std::jthread thread;
 
-  void work(Task&& task);
+  void work(std::stop_token, Task&&);
 public:
-  void add(Task&& task);
+  void add(Task&&);
+  void requestStop();
+  void waitForExit() const;
 };
 
 }

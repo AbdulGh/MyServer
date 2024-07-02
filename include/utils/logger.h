@@ -19,7 +19,8 @@ enum class LogLevel {
   OFF, FATAL, ERROR, WARN, INFO, DEBUG
 };
 
-constexpr LogLevel reportingLevel = LogLevel::DEBUG;
+// constexpr LogLevel reportingLevel = LogLevel::DEBUG;
+constexpr LogLevel reportingLevel = LogLevel::INFO;
 
 consteval std::string_view logLevelToString(LogLevel level){
   constexpr std::array<std::string_view, 6> LogLevelStr {
@@ -55,8 +56,7 @@ inline void log<LogLevel::FATAL>(const std::string& message) {
   std::cout.flush();
   withGreeting<LogLevel::FATAL>(
     std::cerr, 
-    message, " (last error: ", strerror(errno), " (", errno, "))\n",
-    "Fatal message received, shutting down..."
+    message, " (last error: ", strerror(errno), " (", errno, ")). Fatal message received, shutting down..."
   );
   raise(SIGINT);
 }
