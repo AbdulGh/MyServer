@@ -2,19 +2,21 @@
 #define CONCURRENTQUEUE_H
 
 #include <condition_variable>
+#include <deque>
 #include <mutex>
 #include <optional>
 #include <queue>
+#include <ranges>
 
 namespace MyServer::Utils {
 
-template <typename T>
+template <typename T, typename Container = std::deque<T>>
 class ConcurrentQueue
 {
 protected:
   std::mutex mutex;
   std::condition_variable cv;
-  std::queue<T> queue {};
+  std::queue<T, Container> queue {};
 
 public:
   // returns immediately if there's nothing new
@@ -30,7 +32,7 @@ public:
   void wait() {
     if (queue.empty()) {
       std::unique_lock<std::mutex> lock {mutex};
-      cv.wait(lock, [this]() { return !queue.empty(); });
+      cv.wait(lock, [this]{ return !queue.empty(); });
     }
   }
 
@@ -38,6 +40,18 @@ public:
     std::lock_guard<std::mutex> lock {mutex};
     queue.push(addition);
     cv.notify_one();
+  }
+
+  template <std::ranges::forward_range Range>
+  [[maybe_unused]] std::queue<T, Container> swap(Range range) {
+    std::lock_guard<std::mutex> lock {mutex};
+    std::queue<T, Container> newQueue {};
+    for (const T& el: range) {
+      newQueue.push(el);
+    }
+    std::swap(queue, newQueue);
+    cv.notify_all();
+    return newQueue;
   }
 
   size_t size() {

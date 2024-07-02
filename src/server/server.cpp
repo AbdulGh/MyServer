@@ -14,8 +14,9 @@
 #include "utils/concurrentQueue.h"
 
 namespace MyServer {
+
 std::vector<Server*> Server::servers {};
-bool Server::interrupted { false }; //todo rename
+bool Server::exiting { false };
 void Server::handover(int client) {
   Logger::log<Logger::LogLevel::DEBUG>("Handing over client " + std::to_string(client));
   incomingClientQueue.add(client);
@@ -52,24 +53,25 @@ void Server::go(int port) {
 
   Logger::log<Logger::LogLevel::INFO>("Server listening on port " + std::to_string(port));
   int client;
-  while (!interrupted) {
+  while (!exiting) {
     client = accept(serverfd, addressbp, reinterpret_cast<socklen_t*>(&addrlen));
     if (client < 0) {
-      if (errno == EINTR) {
-        Logger::log<Logger::LogLevel::DEBUG>("Main thread got EINTR on accept");
-        continue;
+      if (exiting) {
+        Logger::log<Logger::LogLevel::DEBUG>("Server accept interrupted by exit");
+        break;
       }
       else if (errno == ECONNABORTED) {
         Logger::log<Logger::LogLevel::ERROR>("Client aborted connection during except");
         continue;
       }
       else {
-        Logger::log<Logger::LogLevel::ERROR>("Received unrecoverable error during accept");
+        Logger::log<Logger::LogLevel::ERROR>("Received unhandled error during accept");
         return;
       }
     }
     handover(client);
   }
+  shutdown();
 }
 
 // Interestingly, we don't need to bother with SA_RESTART, the default (non-restarting) behaviour is what we wanted anyway.
@@ -81,37 +83,46 @@ void Server::go(int port) {
 // Our other syscalls are not interruptible, or at least, man -wK EINTR makes me think so
 
 // Anyway, the way shutdown works is:
-// - First, we request stop frop the dispatch threads, and wait for them to set a flag that they are closing
-//   The point being that from now on they will spin up no more worker threads
-// - Then we go through the worker threads and request stop - they check their stop token before they accept any work/push their result to an outgoing queue
+// - First, we request stop frop the dispatch threads. We wake up any blocked dispatch threads by writing as many -1s to the client queue
+// - Then we wait for them to set a flag that acknowleding that they are closing
+//    - The point being that from now on they will spin up no more worker threads
+// - Then we go through the worker threads and request stop
+// -  - They check their stop token before they accept any work/push their result to an outgoing queue
 // - In the meantime, the dispatch threads finishing writing any requests they were half way through writing (if any)
 // - Then they check that all the worker threads have exited (as they maintain references to clients)
 // - Then they close all the clients, and then we are done
+void Server::shutdown() {
+  Logger::log<Logger::LogLevel::INFO>("Requesting stop from dispatchers");
+  for (Dispatch& dispatch: dispatchThreads) dispatch.requestStop();
+
+  std::vector dummyClients(numDispatchThreads, -1);
+  incomingClientQueue.swap(dummyClients);
+
+  Logger::log<Logger::LogLevel::INFO>("Waiting for dispatch shutdown acknowledgement");
+  for (Dispatch& dispatch: dispatchThreads) dispatch.acknowledgeShutdown();
+
+  Logger::log<Logger::LogLevel::INFO>("Requesting stop from workers");
+  for (Worker& worker: workerThreads) worker.requestStop();
+
+  Logger::log<Logger::LogLevel::INFO>("Waiting for dispatch threads to wind down");
+  for (Dispatch& dispatch: dispatchThreads) dispatch.join();
+
+  Logger::log<Logger::LogLevel::INFO>("Shutdown complete, exiting");
+}
+
+// we dont do much in the sigint, because any mutex that we might touch could already be locked
 void Server::sigint(int) {
-  if (interrupted) {
+  //todo maybe this needs to be a flag with memory order
+  if (exiting) {
     Logger::log<Logger::LogLevel::INFO>("Second SIGINT - exiting quick");
     exit(0);
   }
+  exiting = true;
   Logger::log<Logger::LogLevel::INFO>("SIGINT caught - shutting down");
-  interrupted = true;
-  //todo transpose
   for (Server* server: servers) {
-    close(server->serverfd);
-
-    Logger::log<Logger::LogLevel::INFO>("Requesting stop from dispatchers");
-    //get acknowledgement from dispatch threads that they will dispatch no more
-    for (Dispatch& dispatch: server->dispatchThreads) dispatch.requestStop();
-    for (Dispatch& dispatch: server->dispatchThreads) dispatch.acknowledgeShutdown();
-
-    Logger::log<Logger::LogLevel::INFO>("Requesting stop from workers");
-    //request stop from the worker threads, while the dispatch threads finish writing their last requests
-    for (Worker& worker: server->workerThreads) worker.requestStop();
-    
-
-    Logger::log<Logger::LogLevel::INFO>("Waiting for dispatch threads to wind down");
-    for (Dispatch& dispatch: server->dispatchThreads) dispatch.join();
-
-    Logger::log<Logger::LogLevel::INFO>("Shutdown complete, exiting");
+    if (::shutdown(server->serverfd, SHUT_RDWR) < 0 || close(server->serverfd) < 0) {
+      Logger::log<Logger::LogLevel::ERROR>("Error whilst closing serverfd");
+    }
   }
 }
 

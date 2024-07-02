@@ -34,6 +34,7 @@ private:
   std::minstd_rand eng {std::random_device{}()};
   std::uniform_int_distribution<> dist{0, threadPoolSize - 1};
 
+  void work(std::stop_token);
   void assumeClient(const int client);
   void dispatchRequest(Request&& request, Client& destination);
   void getNotifications();
@@ -44,7 +45,6 @@ private:
 public:
   static constexpr int threadPoolSize = 6; 
   Dispatch(Server* parent);
-  void work(std::stop_token); //todo does this need to be public
   void join();
 
   void requestStop();

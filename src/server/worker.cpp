@@ -6,7 +6,6 @@ namespace MyServer {
 void Worker::work(std::stop_token token, Task&& task) {
   Logger::log<Logger::LogLevel::DEBUG>("Starting up a worker thread");
 
-  //todo request stop
   while (!token.stop_requested()) {
     Response result;
 

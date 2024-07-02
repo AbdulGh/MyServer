@@ -27,19 +27,19 @@ Client::IOState Client::handleRead() {
     }
     else {
       log<Logger::LogLevel::ERROR>("Failed to read from the client");
-      exit(true);
+      initiateShutdown(true);
       return IOState::ERROR;
     }
   }
   else if (readBytes == 0) {
-    initiateShutdown();
+    setClosing();
     return IOState::WOULDBLOCK;
   }
 
   readState.process(std::string_view(buf, readBytes));
   if (readState.isError()) {
     log<Logger::LogLevel::ERROR>("Could not parse http request");
-    exit(true);
+    initiateShutdown(true);
     return IOState::ERROR;
   }
   return IOState::CONTINUE;
@@ -73,13 +73,13 @@ Client::IOState Client::handleWrite() {
     if (bytesOut < 0) {
       if (errno == EAGAIN || errno == EWOULDBLOCK) return IOState::WOULDBLOCK;
       else {
-        exit(true);
+        initiateShutdown(true);
         return IOState::ERROR;
       }
     }
     else if (bytesOut == 0) {
       // not exactly sure what this means, if we get EPOLLIN and can't write any bytes
-      exit(true);
+      initiateShutdown(true);
       return IOState::ERROR;
     }
 
@@ -109,7 +109,7 @@ Client::IOState Client::writeOne() {
   if (bytesOut <= 0) {
     if (errno == EAGAIN || errno == EWOULDBLOCK) return IOState::WOULDBLOCK;
     else {
-      exit(true);
+      initiateShutdown(true);
       return IOState::ERROR;
     }
   }
@@ -152,13 +152,13 @@ void Client::close() {
   if (fd < 0) {
     log<Logger::LogLevel::FATAL> ("(Application error) Tried to close a closed socket");
   }
-  //todo log errors
-  ::close(fd);
+  if (::close(fd) < 0) {
+    log<Logger::LogLevel::ERROR> ("Error while closing client fd");
+  }
   fd = -1;
 }
 
-//todo rename
-void Client::exit(bool withError) {
+void Client::initiateShutdown(bool withError) {
   std::lock_guard<std::mutex> lock(queueMutex);
   blocked = true;
   outgoing.clear(); 
@@ -167,11 +167,10 @@ void Client::exit(bool withError) {
     log<Logger::LogLevel::ERROR>("Client error");
     outgoing[0] = "HTTP/1.1 400 Bad Request";
   }
-  initiateShutdown();
+  setClosing();
 }
 
-//todo this may be silly
-void Client::initiateShutdown() {
+void Client::setClosing() {
   log<Logger::LogLevel::DEBUG>("Initiating client shutdown");
   closing = true;
 }

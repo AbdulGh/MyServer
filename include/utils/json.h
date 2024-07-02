@@ -5,6 +5,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <vector>
 #include <array>
 #include <tuple>
@@ -26,16 +27,12 @@ constexpr void stripWhitespace(std::string_view& str, int from = 0) {
 
 namespace MyServer::Utils::JSON {
 
-//todo require default constructible
-template <typename Me, typename ContentType>
+template <typename ContentType>
+concept DefaultConstructible = std::is_default_constructible_v<ContentType>;
+template <typename Me, DefaultConstructible ContentType>
 struct JSONBase
 {
   ContentType contents;
-
-  // template <typename Self>
-  // ContentType helper(this Self&&, std::string_view& str) {
-  //   return Self::consumeFromJSON(str);
-  // }
 
   JSONBase() {};
   JSONBase(std::string_view& str): contents{ Me::consumeFromJSON(str) } {}

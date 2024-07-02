@@ -6,7 +6,6 @@
 #include <sys/epoll.h>
 #include <unistd.h>
 #include <utility>
-#include <set>
 
 #include "server/dispatch.h"
 #include "server/server.h"
@@ -70,11 +69,15 @@ void Dispatch::work(std::stop_token token) {
         Logger::log<Logger::LogLevel::INFO>("Dispatch thread exiting");
         break;
       }
-      //todo - handling shutdown?
       Logger::log<Logger::LogLevel::INFO>("Dispatch thread waiting for work");
       server->incomingClientQueue.wait();
     }
     if (std::optional<int> client; (client = server->incomingClientQueue.take())) {
+      if (client == -1) {
+        // main thread does this to wake us up on shutdown
+        shutdown();
+        return;
+      }
       assumeClient(*client);
     }
 
@@ -102,7 +105,7 @@ void Dispatch::work(std::stop_token token) {
         dispatchRequest(std::move(request), client);
       }
 
-      if (notifications & EPOLLHUP) client.exit(false);
+      if (notifications & EPOLLHUP) client.initiateShutdown(false);
 
       if (notifications & EPOLLOUT) {
         if (client.handleWrite() == Client::IOState::WOULDBLOCK) notifications ^= EPOLLOUT;
@@ -211,8 +214,7 @@ void Dispatch::shutdown() {
           notifications = 0;
           if (state == Client::IOState::ERROR) {
             //not really a problem, we just wont bother finishing the response
-            Logger::log<Logger::LogLevel::ERROR>("Client errored during shutdown");
-            client.exit(true);
+            client.initiateShutdown(true);
           }
         } 
       }

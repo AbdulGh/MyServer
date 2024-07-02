@@ -6,7 +6,6 @@
 #include <mutex>
 #include <string>
 
-#include "utils/concurrentMap.h"
 #include "utils/logger.h"
 #include "server/parseHTTP.h"
 
@@ -22,18 +21,17 @@ private:
   int written {0};
   std::atomic<int> pending {0};
   bool closing {false};
-  bool blocked {false}; //client is no longer reading
+  bool blocked {false}; //client is no longer reading (todo)
+  int fd {-1};
 
   unsigned long sequence = 0;
   void resetSequence();
 
   void close();
-  void initiateShutdown();
   template <Logger::LogLevel level>
   void log(const std::string&);
   
 public:
-  int fd {-1};//todo
   enum class IOState { CONTINUE, ERROR, WOULDBLOCK, DONE };
   Client(int fd): fd{fd} {};
 
@@ -46,10 +44,11 @@ public:
   unsigned long incrementSequence();
   bool isPending() const;
   bool isClosing() const;
+  void setClosing();
   bool isBlocked() const;
-  void exit(bool withError);
+  void abort(bool withError);
 
-  //we intend for this to just sit in the fd->client map in the owning dispatch thread
+  //we intend for this class to just sit in the fd->client map in the owning dispatch thread
   Client(Client&&) = delete;
   Client& operator=(Client&&) = delete;
   Client(Client&) = delete;
@@ -57,6 +56,7 @@ public:
 
   void addOutgoing(unsigned long sequence, std::string&& outboundStr);
 
+  void initiateShutdown(bool withError);
   ~Client();
 };
 

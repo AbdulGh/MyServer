@@ -21,7 +21,7 @@ private:
 
   void handover(int client);
 
-  static bool interrupted;
+  static bool exiting;
   static std::vector<Server*> servers;
   static void sigint(int);
 
@@ -53,6 +53,7 @@ public:
   Server& operator=(const Server&&) = delete;
 
   void registerHandler(std::string endpoint, Request::Method method, Handler handler);
+  void shutdown();
 
   void go(int port);
 };
