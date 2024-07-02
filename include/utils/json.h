@@ -23,6 +23,16 @@ constexpr void stripWhitespace(std::string_view& str, int from = 0) {
   str = str.substr(from);
 }
 
+constexpr std::string takeString(std::string_view& str) {
+  size_t end;
+  if (str.size() < 2 || str[0] != '"' || (end = str.find_first_of('"', 1)) == std::string_view::npos) {
+    throw MyServer::Utils::HTTPException(UNPROCESSABLE_ENTITY, "JSON string not \"delimited\"");
+  }
+  std::string result {str.substr(1, end - 1)};
+  str.remove_prefix(end + 1);
+  return result;
+}
+
 }
 
 namespace MyServer::Utils::JSON {
@@ -120,17 +130,11 @@ public:
 // - or null
 
 /*** string type ***/
+
 template <>
 inline std::string JSON<std::string>::consumeFromJSON(std::string_view& json) {
   stripWhitespace(json);
-  //todo extract
-  size_t end;
-  if (json.size() < 2 || json[0] != '"' || (end = json.find_first_of('"', 1)) == std::string_view::npos) {
-    throw HTTPException(UNPROCESSABLE_ENTITY, "JSON string not \"delimited\"");
-  }
-  std::string result {json.substr(1, end - 1)};
-  json.remove_prefix(end + 1);
-  return result;
+  return takeString(json);
 };
 
 template <>
@@ -495,20 +499,16 @@ struct JSON<MapOf<T>>: public std::unordered_map<std::string, IdempotentJSONTag_
     stripWhitespace(json, 1);
 
     while (!json.empty()) {
-      size_t end;
       if (json[0] == '}') break;
-      else if (json.size() < 2 || json[0] != '"' || (end = json.find_first_of('"', 1)) == std::string_view::npos) {
-        throw HTTPException(UNPROCESSABLE_ENTITY, "JSON string not \"delimited\"");
-      }
-      std::string key {json.substr(1, end - 1)};
-      stripWhitespace(json, end + 1);
+      std::string key = takeString(json);
+      stripWhitespace(json);
 
       if (json.size() == 0 || json[0] != ':') {
         throw HTTPException(UNPROCESSABLE_ENTITY, "expected ':' between key and value");
       }
       stripWhitespace(json, 1);
 
-      MapType::emplace(std::piecewise_construct, std::forward_as_tuple(key), std::forward_as_tuple(json));
+      MapType::emplace(std::piecewise_construct, std::forward_as_tuple(std::move(key)), std::forward_as_tuple(json));
 
       //look for comma 
       stripWhitespace(json);
