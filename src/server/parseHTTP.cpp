@@ -8,6 +8,7 @@ namespace MyServer {
 namespace HTTP {
 
 RequestParser::RequestParser(): state{State::PARSE_METHOD} {};
+
 void RequestParser::reset() {
   state = State::PARSE_METHOD;
   currentRequest = {};
@@ -15,6 +16,11 @@ void RequestParser::reset() {
   count = 0;
   error = false;
   fresh = true;
+}
+
+void RequestParser::clear() {
+  reset();
+  parsedRequests.clear();
 }
 
 void RequestParser::commitAndContinue(std::string_view input) {

@@ -45,6 +45,7 @@ public:
   bool isError() const;
   bool isFresh() const;
   void reset();
+  void clear();
   std::vector<Request> takeRequests();
 };
 

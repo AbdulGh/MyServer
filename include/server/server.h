@@ -21,7 +21,7 @@ private:
 
   void handover(int client);
 
-  static bool exiting;
+  static std::atomic<bool> exiting;
   static std::vector<Server*> servers;
   static void sigint(int);
 
@@ -47,6 +47,7 @@ public:
     dispatchThreads{makeThreads<Dispatch, numDispatchThreads>(this)},
     workerThreads{makeThreads<Worker, Dispatch::threadPoolSize>()}
   {}
+
   Server(const Server&) = delete;
   Server(const Server&&) = delete;
   Server& operator=(const Server&) = delete;

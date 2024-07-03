@@ -16,13 +16,12 @@
 namespace MyServer {
 
 std::vector<Server*> Server::servers {};
-bool Server::exiting { false };
+std::atomic<bool> Server::exiting { false };
 void Server::handover(int client) {
   Logger::log<Logger::LogLevel::DEBUG>("Handing over client " + std::to_string(client));
   incomingClientQueue.add(client);
 }
 
-//todo check copies etc for std::function
 void Server::registerHandler(std::string endpoint, Request::Method method, Handler handler) {
   handlers[std::to_underlying(method)][std::move(endpoint)] = std::move(handler);
 }
@@ -37,7 +36,6 @@ void Server::go(int port) {
   address.sin_port = htons(port);
   sockaddr* const addressbp = reinterpret_cast<sockaddr*>(&address);
 
-  // TCP socket
   serverfd = insist(socket(AF_INET, SOCK_STREAM, 0), "Couldn't make server socket");
   insist(setsockopt(serverfd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)), "Couldn't set the socket as reusable");
   insist(bind(serverfd, addressbp, sizeof(address)), "Couldn't bind to server socket");
@@ -112,7 +110,6 @@ void Server::shutdown() {
 
 // we dont do much in the sigint, because any mutex that we might touch could already be locked
 void Server::sigint(int) {
-  //todo maybe this needs to be a flag with memory order
   if (exiting) {
     Logger::log<Logger::LogLevel::INFO>("Second SIGINT - exiting quick");
     exit(0);

@@ -14,14 +14,14 @@ namespace MyServer {
 class Client 
 {
 private:
-  HTTP::RequestParser readState {};
+  HTTP::RequestParser httpParser {};
   //we use the map as a queue
   std::mutex queueMutex {};
   std::map<unsigned long, std::string> outgoing;
   int written {0};
   std::atomic<int> pending {0};
   bool closing {false};
-  bool wrhup {false}; //client is no longer reading - happens on hup, error, etc
+  bool wrhup {false}; //client is no longer reading - happens on hup, error
   int fd {-1};
 
   unsigned long sequence = 0;
@@ -57,7 +57,7 @@ public:
 
   bool addOutgoing(unsigned long sequence, std::string&& outboundStr);
 
-  void initiateShutdown(bool withError);
+  void initiateShutdown();
   ~Client();
 };
 

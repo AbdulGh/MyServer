@@ -103,7 +103,11 @@ void Dispatch::work(std::stop_token token) {
       bool removeClient = false;
 
       if (clientNotifications & EPOLLIN) {
-        if (client.handleRead() == Client::IOState::WOULDBLOCK) clientNotifications ^= EPOLLIN;
+        Client::IOState state = client.handleRead();
+        if (state == Client::IOState::WOULDBLOCK) clientNotifications ^= EPOLLIN;
+        else if (state == Client::IOState::ERROR) {
+          clientNotifications = 0u;
+        }
       }
 
       for (Request& request: client.takeRequests()){
@@ -111,20 +115,19 @@ void Dispatch::work(std::stop_token token) {
       }
 
       if (clientNotifications & EPOLLHUP) {
-        client.initiateShutdown(false);
+        client.initiateShutdown();
         clientNotifications ^= EPOLLHUP;
       }
+
       if (clientNotifications & EPOLLRDHUP) {
         client.setClosing();
         clientNotifications ^= EPOLLRDHUP;
       }
 
       if (clientNotifications & EPOLLOUT) {
-        Client::IOState state = client.handleWrite();
-        if (state == Client::IOState::WOULDBLOCK || state == Client::IOState::DONE) clientNotifications ^= EPOLLOUT;
-        else if (state == Client::IOState::ERROR) {
-          //todo
-        }
+        //this also handles the error - the client shuts itself down in this case, and we drop the notification
+        //if still pending the last worker thread will let us know to check again (and close it)
+        if (client.handleWrite() != Client::IOState::CONTINUE) clientNotifications ^= EPOLLOUT;
       }
 
       if (client.isClosing() && !client.isPending()) {
@@ -199,7 +202,6 @@ void Dispatch::dispatchRequest(Request&& request, Client& client) {
     client.addOutgoing(client.incrementSequence(), "HTTP/1.1 404 Not Found\r\nContent-Length: 0");
   }
   else {
-    //todo recommend %able sizes?
     server->workerThreads[dist(eng)].add(
       Task{
         .destination = &client, .owner = this,
@@ -240,7 +242,7 @@ void Dispatch::shutdown() {
           clientNotifications = 0;
           if (state == Client::IOState::ERROR) {
             //not really a problem, we just wont bother finishing the response
-            client.initiateShutdown(true);
+            client.initiateShutdown();
           }
         } 
       }

@@ -32,7 +32,7 @@ Client::IOState Client::handleRead() {
     }
     else {
       log<Logger::LogLevel::ERROR>("Failed to read from the client");
-      initiateShutdown(true);
+      initiateShutdown();
       return IOState::ERROR;
     }
   }
@@ -41,11 +41,11 @@ Client::IOState Client::handleRead() {
     return IOState::WOULDBLOCK;
   }
 
-  readState.process(std::string_view(buf, readBytes));
-  if (readState.isError()) {
+  httpParser.process(std::string_view(buf, readBytes));
+  if (httpParser.isError()) {
     log<Logger::LogLevel::ERROR>("Could not parse http request");
-    initiateShutdown(true);
-    return IOState::ERROR;
+    outgoing[incrementSequence()] = "HTTP/1.1 400 Bad Request";
+    return IOState::CONTINUE;
   }
   return IOState::CONTINUE;
 }
@@ -66,17 +66,14 @@ Client::IOState Client::handleWrite() {
     size_t desired = std::min(out.size() - written, allotment);
     ssize_t bytesOut = write(fd, out.data() + written, desired);
 
-    if (bytesOut < 0) {
+    // not exactly sure what it means if we get EPOLLIN but can't write any bytes
+    // for now I'll consider it an error
+    if (bytesOut <= 0) {
       if (errno == EAGAIN || errno == EWOULDBLOCK) return IOState::WOULDBLOCK;
       else {
-        initiateShutdown(true);
+        initiateShutdown();
         return IOState::ERROR;
       }
-    }
-    else if (bytesOut == 0) {
-      // not exactly sure what this means, if we get EPOLLIN and can't write any bytes
-      initiateShutdown(true);
-      return IOState::ERROR;
     }
 
     allotment -= bytesOut;
@@ -106,7 +103,7 @@ Client::IOState Client::writeOne() {
   if (bytesOut <= 0) {
     if (errno == EAGAIN || errno == EWOULDBLOCK) return IOState::WOULDBLOCK;
     else {
-      initiateShutdown(true);
+      initiateShutdown();
       return IOState::ERROR;
     }
   }
@@ -115,21 +112,25 @@ Client::IOState Client::writeOne() {
   return IOState::CONTINUE;
 }
 
+// addOutgoing returns true if it's worth notifying the dispatch thread about this client.
+// if the queue was already occupied, the dispatch thread will be writing it out anyway, so no notification
+// if wrhup (e.g., an error) we notify the dispatch thread to close the client if we are the last worker thread referencing the client
 bool Client::addOutgoing(unsigned long sequence, std::string&& outboundStr) {
   std::lock_guard<std::mutex> lock { queueMutex };
   bool awoken = false;
   if (!wrhup) {
     size_t oldSize = outgoing.size();
     outgoing.insert_or_assign(sequence, std::move(outboundStr));
-    awoken = outgoing.size() > oldSize;
+    awoken = outgoing.size() == 1;
   }
+  else awoken = pending == 1;
   --pending;
   return awoken;
 }
 
 bool Client::isPending() const {
   //safe as only one dispatch thread considers a client
-  return !(pending.load() == 0 && outgoing.empty() && readState.isFresh());
+  return !(pending.load() == 0 && outgoing.empty() && httpParser.isFresh());
 }
 
 bool Client::isClosing() const {
@@ -158,16 +159,15 @@ void Client::close() {
   fd = -1;
 }
 
-void Client::initiateShutdown(bool withError) {
+void Client::initiateShutdown() {
   if (wrhup) return;
-  std::lock_guard<std::mutex> lock(queueMutex);
   wrhup = true;
-  outgoing.clear(); 
-  resetSequence();
-  if (withError) {
-    log<Logger::LogLevel::ERROR>("Client error");
-    outgoing[0] = "HTTP/1.1 400 Bad Request";
+  {
+    std::lock_guard<std::mutex> lock {queueMutex};
+    outgoing.clear(); 
   }
+  httpParser.clear();
+  resetSequence();
   setClosing();
 }
 
@@ -177,7 +177,7 @@ void Client::setClosing() {
 }
 
 std::vector<Request> Client::takeRequests() {
-  std::vector requests = readState.takeRequests();
+  std::vector requests = httpParser.takeRequests();
   pending += requests.size();
   return requests;
 }
