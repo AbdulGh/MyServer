@@ -14,7 +14,7 @@ template <typename T, typename Container = std::deque<T>>
 class ConcurrentQueue
 {
 protected:
-  std::mutex mutex;
+  mutable std::mutex mutex;
   std::condition_variable cv;
   std::queue<T, Container> queue {};
 
@@ -52,10 +52,6 @@ public:
     std::swap(queue, newQueue);
     cv.notify_all();
     return newQueue;
-  }
-
-  size_t size() {
-    return queue.size();
   }
 };
 

@@ -24,4 +24,5 @@ makeTodo() {
 
 export -f makeTodo
 
-seq 1 10000 | xargs -n1 -P20 -I{} bash -c 'makeTodo "{}"'
+makeTodo meme
+# seq 1 10000 | xargs -n1 -P20 -I{} bash -c 'makeTodo "{}"'

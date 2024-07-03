@@ -10,7 +10,7 @@ namespace MyServer {
 class Worker
 {
 private:
-  std::mutex queueMutex {};
+  mutable std::mutex queueMutex {};
   std::queue<Task> taskQueue {};
   //managed by the above mutex
   bool deadOrDying {true};
@@ -21,6 +21,8 @@ public:
   void add(Task&&);
   void requestStop();
   void waitForExit() const;
+  //used only for diagnostics
+  size_t tasks() const;
 };
 
 }

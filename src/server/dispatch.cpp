@@ -14,7 +14,7 @@
 #include "server/client.h"
 
 namespace MyServer {
-//todo handle write errors
+//todo disconnect inactive clients
 Dispatch::Dispatch(Server* server): server{server} {
   epollfd = insist(epoll_create1(0), "Couldn't create epoll");
   thread = std::jthread(std::bind_front(&Dispatch::work, this));
@@ -31,7 +31,7 @@ void Dispatch::work(std::stop_token token) {
       for (const auto& [_, client]: clients) {
         pendingClients += client.isPending();
         closingClients += client.isClosing();
-        erroredClients += client.isBlocked();
+        erroredClients += client.notWriteable();
       }
 
       int read = 0; int write = 0; int rdhup = 0;
@@ -39,6 +39,11 @@ void Dispatch::work(std::stop_token token) {
         read += (notification & EPOLLIN) > 0;
         write += (notification & EPOLLOUT) > 0;
         rdhup += (notification & EPOLLRDHUP) > 0;
+      }
+
+      int taskCount = 0;
+      for (const Worker& worker: server->workerThreads) {
+        taskCount += worker.tasks();
       }
 
       Logger::log<Logger::LogLevel::INFO>(
@@ -50,8 +55,8 @@ void Dispatch::work(std::stop_token token) {
 
       Logger::log<Logger::LogLevel::INFO>(
         std::format(
-          "{} want read, {} want write, {} rdhuped",
-          read, write, rdhup
+          "{} want read, {} want write, {} rdhuped. {} many tasks queued",
+          read, write, rdhup, taskCount
         )
       );
 
@@ -94,38 +99,56 @@ void Dispatch::work(std::stop_token token) {
       }
       Client& client = clientIt->second;
 
-      unsigned& notifications = notificationIt->second;
+      unsigned& clientNotifications = notificationIt->second;
       bool removeClient = false;
 
-      if (notifications & EPOLLIN) {
-        if (client.handleRead() == Client::IOState::WOULDBLOCK) notifications ^= EPOLLIN;
+      if (clientNotifications & EPOLLIN) {
+        if (client.handleRead() == Client::IOState::WOULDBLOCK) clientNotifications ^= EPOLLIN;
       }
 
       for (Request& request: client.takeRequests()){
         dispatchRequest(std::move(request), client);
       }
 
-      if (notifications & EPOLLHUP) client.initiateShutdown(false);
-
-      if (notifications & EPOLLOUT) {
-        if (client.handleWrite() == Client::IOState::WOULDBLOCK) notifications ^= EPOLLOUT;
+      if (clientNotifications & EPOLLHUP) {
+        client.initiateShutdown(false);
+        clientNotifications ^= EPOLLHUP;
+      }
+      if (clientNotifications & EPOLLRDHUP) {
+        client.setClosing();
+        clientNotifications ^= EPOLLRDHUP;
       }
 
-      if ((notifications & (EPOLLRDHUP | EPOLLHUP)) && !client.isPending()) {
+      if (clientNotifications & EPOLLOUT) {
+        Client::IOState state = client.handleWrite();
+        if (state == Client::IOState::WOULDBLOCK || state == Client::IOState::DONE) clientNotifications ^= EPOLLOUT;
+        else if (state == Client::IOState::ERROR) {
+          //todo
+        }
+      }
+
+      if (client.isClosing() && !client.isPending()) {
         clients.erase(clientIt);
-        notifications = 0u;
+        clientNotifications = 0u;
       }
 
-      if (notifications == 0u) {
+      if (clientNotifications == 0u) {
         notificationIt = pendingNotifications.erase(notificationIt);
       }
       else ++notificationIt;
     }
-    getNotifications();
+
+    doEpoll();
+    //additionally, see if we now want to write to some dormant clients
+    //clientsWantWrite.take() may block, but only for a single insertion to a set
+    for (int awokenClient: clientsWantWrite.take()) {
+      pendingNotifications[awokenClient] |= EPOLLOUT;
+    }
+
   }
 }
 
-void Dispatch::getNotifications() {
+void Dispatch::doEpoll() {
   //check new notifications
   ssize_t count = epoll_wait(epollfd, eventBuffer, maxNotifications, 0);
   if (count < 0) {
@@ -166,7 +189,7 @@ void Dispatch::assumeClient(int clientfd) {
   //(https://devblogs.microsoft.com/oldnewthing/20231023-00/?p=108916)
 }
 
-//dispatch thread may block here...
+//dispatch thread may block here, by a worker thread and/or the other dispatch threads
 void Dispatch::dispatchRequest(Request&& request, Client& client) {
   Logger::log<Logger::LogLevel::DEBUG>("Dispatching a request");
   const HandlerMap& methodMap = server->handlers[std::to_underlying(request.method)];
@@ -176,10 +199,13 @@ void Dispatch::dispatchRequest(Request&& request, Client& client) {
     client.addOutgoing(client.incrementSequence(), "HTTP/1.1 404 Not Found\r\nContent-Length: 0");
   }
   else {
+    //todo recommend %able sizes?
     server->workerThreads[dist(eng)].add(
       Task{
-        .destination = &client, .sequence = client.incrementSequence(),
-        .request = std::move(request), .handler = handlerIt->second
+        .destination = &client, .owner = this,
+        .sequence = client.incrementSequence(),
+        .request = std::move(request),
+        .handler = handlerIt->second
       }
     );
   }
@@ -205,28 +231,28 @@ void Dispatch::shutdown() {
       }
       Client& client = clientIt->second;
 
-      unsigned& notifications = notificationIt->second;
+      unsigned& clientNotifications = notificationIt->second;
 
-      if (notifications & EPOLLOUT) {
+      if (clientNotifications & EPOLLOUT) {
         Client::IOState state = client.writeOne();
         if (state != Client::IOState::DONE) finished = false;
         if (state != Client::IOState::CONTINUE) {
-          notifications = 0;
+          clientNotifications = 0;
           if (state == Client::IOState::ERROR) {
             //not really a problem, we just wont bother finishing the response
             client.initiateShutdown(true);
           }
         } 
       }
-      else notifications = 0u;
+      else clientNotifications = 0u;
 
-      if (!notifications) {
+      if (!clientNotifications) {
         notificationIt = pendingNotifications.erase(notificationIt);
       }
       else ++notificationIt;
     }
 
-    getNotifications();
+    doEpoll();
   }
 
   Logger::log<Logger::LogLevel::INFO>("Finished writing to clients, waiting for worker threads to exit");
@@ -238,6 +264,10 @@ void Dispatch::shutdown() {
   clients.clear();
 
   Logger::log<Logger::LogLevel::INFO>("Clients closed, dispatch thread exiting");
+}
+
+void Dispatch::notifyForClient(int clientfd) {
+  clientsWantWrite.add(clientfd);
 }
 
 void Dispatch::requestStop() {

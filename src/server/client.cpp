@@ -1,18 +1,23 @@
-#include "server/client.h"
-#include "server/common.h"
-#include "utils/logger.h"
-#include "server/parseHTTP.h"
 #include <cerrno>
 #include <string>
 #include <string_view>
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include "server/client.h"
+#include "server/common.h"
+#include "utils/logger.h"
+#include "server/parseHTTP.h"
+
 namespace MyServer {
 
 template <Logger::LogLevel level>
 void Client::log(const std::string& str) {
   Logger::log<level>("Client " + std::to_string(fd) + ": " + str);
+}
+
+int Client::getfd() {
+  return fd;
 }
 
 Client::IOState Client::handleRead() {
@@ -45,25 +50,16 @@ Client::IOState Client::handleRead() {
   return IOState::CONTINUE;
 }
 
-// this looks un-threadsafe in various places, but note, this is the only place where outgoing is consumed, and by a single thread
-// (the dispatch thread that owns the client)
-// so for example, if we can tell outgoing is not empty, it will never be empty unless we made it so
-// and sequence does not need to be atomic as we (dispatch thread) are the only people who touch it
 Client::IOState Client::handleWrite() {
-  if (outgoing.empty()) return IOState::CONTINUE;
+  // if a worker thread is writing to the (client-private) queue, we don't bother blocking a dispatch thread
+  std::unique_lock<std::mutex> lock { queueMutex, std::try_to_lock };
+  if (!lock.owns_lock()) return IOState::CONTINUE;
+  else if (outgoing.empty()) return IOState::DONE;
 
-  // for example, the use of cbegin leads to an eventual popFront - seems suspect,
-  // but something will only 'cut in line' if we are out of sequence anyway, and the following if will break
-  // in general we rely on [container.requirements.dataraces] and the fact that map iterators are not invalidated on insertion
   const std::map<unsigned long, std::string>::const_iterator cbegin = outgoing.cbegin();
   if (cbegin->first > sequence) return IOState::CONTINUE;
 
-  // if a worker thread is writing to the (client-private) queue, we don't bother blocking a dispatch thread
-  std::unique_lock<std::mutex> lock(queueMutex, std::try_to_lock);
-  if (!lock.owns_lock()) return IOState::CONTINUE;
-
   size_t allotment = CHUNKSIZE;
-  
   do {
     const std::string& out = cbegin->second;
 
@@ -93,8 +89,9 @@ Client::IOState Client::handleWrite() {
     }
   } while (!outgoing.empty() && allotment > 0) ;
 
-  if (outgoing.empty() && pending == 0) {
-    sequence = 0;
+ if (outgoing.empty()) {
+    if (pending == 0) sequence = 0;
+    return IOState::DONE;
   }
   return IOState::CONTINUE;
 }
@@ -118,13 +115,16 @@ Client::IOState Client::writeOne() {
   return IOState::CONTINUE;
 }
 
-void Client::addOutgoing(unsigned long sequence, std::string&& outboundStr) {
-  std::lock_guard<std::mutex> lock(queueMutex);
-  if (!blocked) {
-    //todo check insert_or_assign for rvalue stuff
+bool Client::addOutgoing(unsigned long sequence, std::string&& outboundStr) {
+  std::lock_guard<std::mutex> lock { queueMutex };
+  bool awoken = false;
+  if (!wrhup) {
+    size_t oldSize = outgoing.size();
     outgoing.insert_or_assign(sequence, std::move(outboundStr));
+    awoken = outgoing.size() > oldSize;
   }
   --pending;
+  return awoken;
 }
 
 bool Client::isPending() const {
@@ -136,8 +136,8 @@ bool Client::isClosing() const {
   return closing;
 }
 
-bool Client::isBlocked() const {
-  return blocked;
+bool Client::notWriteable() const {
+  return wrhup;
 }
 
 unsigned long Client::incrementSequence() {
@@ -159,8 +159,9 @@ void Client::close() {
 }
 
 void Client::initiateShutdown(bool withError) {
+  if (wrhup) return;
   std::lock_guard<std::mutex> lock(queueMutex);
-  blocked = true;
+  wrhup = true;
   outgoing.clear(); 
   resetSequence();
   if (withError) {

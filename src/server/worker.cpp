@@ -26,9 +26,12 @@ void Worker::work(std::stop_token token, Task&& task) {
       };
     }
 
-    task.destination->addOutgoing(task.sequence, result.toHTTPResponse());
+    bool reactivated = task.destination->addOutgoing(task.sequence, result.toHTTPResponse());
+    if (reactivated) {
+      task.owner->notifyForClient(task.destination->getfd());
+    }
 
-    std::lock_guard<std::mutex> lock{queueMutex};
+    std::lock_guard<std::mutex> lock {queueMutex};
     if (!(taskQueue.empty() || token.stop_requested())) {
       task = std::move(taskQueue.front());
       taskQueue.pop();
@@ -48,15 +51,20 @@ void Worker::work(std::stop_token token, Task&& task) {
 }
 
 void Worker::add(Task&& task) {
-  std::lock_guard<std::mutex> lock{queueMutex};
+  std::lock_guard<std::mutex> lock {queueMutex};
   if (deadOrDying) {
     deadOrDying = false;
-    thread = std::jthread{
+    thread = std::jthread {
       std::bind_front(&Worker::work, this),
       std::move(task)
     };
   }
   else taskQueue.push(std::move(task));
+}
+
+size_t Worker::tasks() const {
+  std::lock_guard<std::mutex> lock {queueMutex};
+  return taskQueue.size();
 }
 
 void Worker::requestStop() {

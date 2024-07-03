@@ -8,6 +8,7 @@
 #include <unordered_map>
 
 #include "server/client.h"
+#include "utils/readerBiasedSet.h"
 
 namespace MyServer {
 
@@ -28,25 +29,27 @@ private:
   std::jthread thread;
   std::unordered_map<int, Client> clients {};
   std::unordered_map<int, unsigned> pendingNotifications {};
+  Utils::ReaderBiasedSet<int> clientsWantWrite {};
   int epollfd {-1};
 
   //for basic load balancing
   std::minstd_rand eng {std::random_device{}()};
-  std::uniform_int_distribution<> dist{0, threadPoolSize - 1};
+  std::uniform_int_distribution<> dist {0, threadPoolSize - 1};
 
   void work(std::stop_token);
   void assumeClient(const int client);
   void dispatchRequest(Request&& request, Client& destination);
-  void getNotifications();
+  void doEpoll();
 
   //set to promise the SIGINT handler that we will start up no more worker threads
   std::atomic_flag exiting {false};
   void shutdown();
 public:
   static constexpr int threadPoolSize = 6; 
+
   Dispatch(Server* parent);
   void join();
-
+  void notifyForClient(int);
   void requestStop();
   void acknowledgeShutdown();
   ~Dispatch();

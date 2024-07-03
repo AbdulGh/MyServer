@@ -21,19 +21,20 @@ private:
   int written {0};
   std::atomic<int> pending {0};
   bool closing {false};
-  bool blocked {false}; //client is no longer reading (todo)
+  bool wrhup {false}; //client is no longer reading - happens on hup, error, etc
   int fd {-1};
 
   unsigned long sequence = 0;
   void resetSequence();
-
   void close();
+
   template <Logger::LogLevel level>
   void log(const std::string&);
   
 public:
   enum class IOState { CONTINUE, ERROR, WOULDBLOCK, DONE };
   Client(int fd): fd{fd} {};
+  int getfd();
 
   IOState handleRead();
   IOState handleWrite();
@@ -45,7 +46,7 @@ public:
   bool isPending() const;
   bool isClosing() const;
   void setClosing();
-  bool isBlocked() const;
+  bool notWriteable() const;
   void abort(bool withError);
 
   //we intend for this class to just sit in the fd->client map in the owning dispatch thread
@@ -54,7 +55,7 @@ public:
   Client(Client&) = delete;
   Client& operator=(Client&) = delete;
 
-  void addOutgoing(unsigned long sequence, std::string&& outboundStr);
+  bool addOutgoing(unsigned long sequence, std::string&& outboundStr);
 
   void initiateShutdown(bool withError);
   ~Client();

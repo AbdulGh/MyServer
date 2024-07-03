@@ -19,7 +19,6 @@ enum class LogLevel {
   OFF, FATAL, ERROR, WARN, INFO, DEBUG
 };
 
-// constexpr LogLevel reportingLevel = LogLevel::DEBUG;
 constexpr LogLevel reportingLevel = LogLevel::INFO;
 
 consteval std::string_view logLevelToString(LogLevel level){
