@@ -16,6 +16,16 @@ int main()
   Server server {};
 
   server.registerHandler(
+    "/", Request::Method::GET,
+    [](Request&) -> Response  {
+      return {
+        .statusCode = Response::StatusCode::OK,
+        .contentType = Response::ContentType::PLAINTEXT,
+        .body = "hello"
+      };
+  });
+
+  server.registerHandler(
     "/echo", Request::Method::POST,
     [](Request& request) -> Response  {
       return {
@@ -76,8 +86,7 @@ int main()
   server.registerHandler(
     "/todo", Request::Method::PUT,
     [&todoDatabase, &mt](Request& req) -> Response {
-      std::string_view todo_fixme {req.body};
-      Todo todo {todo_fixme};
+      Todo todo {req};
 
       if (!todo.get<"description">()) {
         throw Utils::HTTPException(Response::StatusCode::UNPROCESSABLE_ENTITY, "Need a description");

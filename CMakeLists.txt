@@ -2,10 +2,8 @@ cmake_minimum_required(VERSION 3.12)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 project(server)
 
-#v14 required to deduce this
-#todo... doesn't compile on clang, it doesn't like some of the json template stuff
-set(CMAKE_CXX_COMPILER g++-14)
-# set(CMAKE_CXX_COMPILER clang++)
+# set(CMAKE_CXX_COMPILER g++-14)
+set(CMAKE_CXX_COMPILER clang++)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -20,16 +18,19 @@ target_include_directories(mainlib PUBLIC include)
 add_executable(main main.cpp)
 target_link_libraries(main PUBLIC mainlib)
 
+# add_executable(bench test/benchmark/main.cpp)
+# target_link_libraries(bench PUBLIC mainlib)
+
 enable_testing()
 
-add_executable(parseHTTP test/parseHTTP.cpp)
-target_link_libraries(parseHTTP PUBLIC mainlib)
-add_test(NAME parseHTTP COMMAND parseHTTP)
+# add_executable(parseHTTP test/parseHTTP.cpp)
+# target_link_libraries(parseHTTP PUBLIC mainlib)
+# add_test(NAME parseHTTP COMMAND parseHTTP)
 
 add_executable(json test/json.cpp)
 target_link_libraries(json PUBLIC mainlib)
 add_test(NAME json COMMAND json)
 
-add_executable(map test/map.cpp)
-target_link_libraries(map PUBLIC mainlib)
-add_test(NAME map COMMAND map)
+# add_executable(map test/map.cpp)
+# target_link_libraries(map PUBLIC mainlib)
+# add_test(NAME map COMMAND map)

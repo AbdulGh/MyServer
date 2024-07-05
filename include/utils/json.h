@@ -24,9 +24,14 @@ constexpr void stripWhitespace(std::string_view& str, int from = 0) {
 }
 
 constexpr std::string takeString(std::string_view& str) {
-  size_t end;
-  if (str.size() < 2 || str[0] != '"' || (end = str.find_first_of('"', 1)) == std::string_view::npos) {
+  if (str.size() < 2 || str[0] != '"') {
     throw MyServer::Utils::HTTPException(UNPROCESSABLE_ENTITY, "JSON string not \"delimited\"");
+  }
+  size_t end = 1;
+  while (end < str.size()) {
+    if (str[end] == '"') break;
+    else if (str[end] == '\\') ++end;
+    ++end;
   }
   std::string result {str.substr(1, end - 1)};
   str.remove_prefix(end + 1);
@@ -37,9 +42,8 @@ constexpr std::string takeString(std::string_view& str) {
 
 namespace MyServer::Utils::JSON {
 
-template <typename ContentType>
-concept DefaultConstructible = std::is_default_constructible_v<ContentType>;
-template <typename Me, DefaultConstructible ContentType>
+template <typename Me, typename ContentType>
+requires std::is_default_constructible_v<ContentType>
 struct JSONBase
 {
   ContentType contents;
@@ -51,9 +55,6 @@ struct JSONBase
     return Me::consumeFromJSON(bodysv);
   }()} {}
 
-  JSONBase(const JSONBase&) = default;
-  JSONBase(JSONBase&&) = default;
-
   JSONBase(const ContentType& other) {
     contents = other; 
   }   
@@ -61,8 +62,6 @@ struct JSONBase
     contents = std::move(other);
   }   
 
-  JSONBase& operator=(const JSONBase& other) = default;
-  JSONBase& operator=(JSONBase&& other) = default;
   JSONBase& operator=(const ContentType& newContents) {
     contents = newContents;
     return *this;
@@ -77,6 +76,15 @@ struct JSONBase
   };
   friend bool operator==(const JSONBase& lhs, ContentType nested) {
     return lhs.contents == nested;
+  }
+
+  operator ContentType() {
+    return contents;
+  }
+
+  template <typename... Ts>
+  void operator[](Ts...) {
+    static_assert(false, "operator[] doesn't work for this type");
   }
 };
 
@@ -101,12 +109,14 @@ std::is_same_v<IdempotentJSONTag_t<JSON<std::string>>, IdempotentJSONTag_t<std::
 );
 
 // 'simple' atomic types (string, double, bool)
-struct Null {}; //JSON<Null> to follow
+
+struct Null {};
 
 template <typename... Ts>
 struct Member;
 template <typename T, typename... Ts>
 struct Member<T, std::variant<Ts...>> : std::disjunction<std::is_same<T, Ts>...> {};
+
 template <typename T>
 concept JSONAtom = Member<T, std::variant<std::string, double, bool, Null>>::value;
 
@@ -115,10 +125,9 @@ class JSON<ContentType>: public JSONBase<JSON<ContentType>, ContentType> {
 public:
   using JSONBase<JSON<ContentType>, ContentType>::JSONBase;
   using JSONBase<JSON<ContentType>, ContentType>::operator=;
-  static ContentType consumeFromJSON(std::string_view&) {
-    static_assert(false, "consumeFromJSON should be specialised");
-  }
+  static ContentType consumeFromJSON(std::string_view&) = delete;
   std::string toString() const = delete;
+
 };
 
 // A json is:
@@ -158,7 +167,7 @@ inline double JSON<double>::consumeFromJSON(std::string_view& json) {
     throw HTTPException(UNPROCESSABLE_ENTITY, "Expected double");
   }
 
-  double result = 0;
+  long double result = 0;
   int head = 0;
   while (head < json.size() && std::isdigit(json[head])) {
     result *= 10;
@@ -172,7 +181,7 @@ inline double JSON<double>::consumeFromJSON(std::string_view& json) {
       throw HTTPException(UNPROCESSABLE_ENTITY, "No numbers after the .");
     }
 
-    //todo consider fp error
+    //todo consider fp error, scientific notation
     double div = 0.1;
     do {
       result += div * (json[head] - '0');
@@ -212,18 +221,34 @@ inline std::string JSON<bool>::toString() const {
   return "false";
 }
 
+template <>
+inline Null JSON<Null>::consumeFromJSON(std::string_view& str) {
+  if (str.substr(0, 4) != "null") {
+    throw HTTPException(UNPROCESSABLE_ENTITY, "expected 'null'");
+  }
+  stripWhitespace(str, 4);
+  return Null{};
+}
+
+constexpr bool operator==(const JSON<Null>&, const JSON<Null>&) {
+  return true;
+}
+
+template<>
+inline std::string JSON<Null>::toString() const {
+  return "null";
+}
+
 // homogeneous array of json
 template <typename T>
-struct ListOf {
-  using type = IdempotentJSONTag_t<T>;
-};
+struct ListOf {};
 
 template <typename T>
 struct JSON<ListOf<T>>: public JSONBase<JSON<ListOf<T>>, std::vector<IdempotentJSONTag_t<T>>> {
-  using JSONBase<JSON<ListOf<T>>, std::vector<IdempotentJSONTag_t<T>>>::operator=;
-  using JSONBase<JSON<ListOf<T>>, std::vector<IdempotentJSONTag_t<T>>>::JSONBase;
   using IdempotentJSONType = IdempotentJSONTag_t<T>;
   using VectorType = std::vector<IdempotentJSONType>;
+  using JSONBase<JSON<ListOf<T>>, VectorType>::operator=;
+  using JSONBase<JSON<ListOf<T>>, VectorType>::JSONBase;
 
   static VectorType consumeFromJSON(std::string_view& json) {
     VectorType parsedContents {};
@@ -234,7 +259,6 @@ struct JSON<ListOf<T>>: public JSONBase<JSON<ListOf<T>>, std::vector<IdempotentJ
     json.remove_prefix(1);
 
     while (json.size() != 0 && json[0] != ']') {
-      stripWhitespace(json);
       parsedContents.emplace_back(json);
       stripWhitespace(json);
 
@@ -274,19 +298,20 @@ struct JSON<ListOf<T>>: public JSONBase<JSON<ListOf<T>>, std::vector<IdempotentJ
 
 /*** specialised objects ***/
 //template 'string literals'
+
 template <size_t N>
 struct StringLiteral {
+  char contents[N] = {};
+
   constexpr StringLiteral(const char(&str)[N]) {
     std::copy_n(str, N - 1, contents);
     contents[N - 1] = '\0';
   }
+
   constexpr operator std::string_view() const { return std::string_view(contents); }
-  char contents[N];
 };
-template <size_t N>
-constexpr bool operator==(const StringLiteral<N>& lhs, std::string_view rhs) {
-  return std::string_view(lhs.contents) == rhs;
-}
+
+template <StringLiteral strlit> struct Key {};
 
 template <StringLiteral K, typename V>
 struct Pair {
@@ -360,18 +385,15 @@ public:
     return "{" + toStringHelper<0>(false);
   }
 
-  /* doesnt work :(
-  template <size_t index = 0>
-  constexpr auto& operator[](const std::string_view& key) {
-    static_assert(index < sizeof...(Ks), "bad key");
-    if constexpr (key == keys[index]) return std::get<index>(contents);
-    return this->operator[]<index + 1>(key);
+  template <StringLiteral str>
+  constexpr auto& operator[](const Key<str>& key) {
+    constexpr size_t index = findIndex<str>();
+    return std::get<index>(this->contents);
   }
-  */
 
-  template <StringLiteral key>
+  template <StringLiteral str>
   auto& get() {
-    constexpr size_t index = findIndex<key>();
+    constexpr size_t index = findIndex<str>();
     return std::get<index>(this->contents);
   }
 
@@ -381,7 +403,7 @@ private:
     for (size_t i = 0; i < sizeof...(Ks); ++i) {
       if (key.contents == keys[i]) return i;
     }
-    throw std::out_of_range("Unknown key");
+    throw std::out_of_range("unknown key");
   }
 
   //maybe not intuitive that this method, like all the others, consumes from the json
@@ -416,28 +438,7 @@ private:
 
 //just a wrapper
 template <typename T>
-struct Nullable {
-  using type = T;
-};
-
-template <>
-struct JSON<Null>: public JSONBase<JSON<Null>, Null> {
-  static Null consumeFromJSON(std::string_view& str) {
-    if (str.substr(0, 4) != "null") {
-      throw HTTPException(UNPROCESSABLE_ENTITY, "expected 'null'");
-    }
-    stripWhitespace(str, 4);
-    return Null{};
-  }
-
-  friend constexpr bool operator==(const JSON<Null>&, const JSON<Null>&) {
-    return true;
-  }
-
-  std::string toString() const {
-    return "null";
-  }
-};
+struct Nullable {};
 
 template <typename T> 
 struct JSON<Nullable<T>>: public JSONBase<JSON<Nullable<T>>, std::variant<IdempotentJSONTag_t<T>, JSON<Null>>> {
@@ -446,8 +447,8 @@ struct JSON<Nullable<T>>: public JSONBase<JSON<Nullable<T>>, std::variant<Idempo
 
   static std::variant<NestedType, JSON<Null>> consumeFromJSON(std::string_view& str) {
     stripWhitespace(str);
-    if (str.size() == 0 || str[0] != 'n') return NestedType{str};
-    else return JSON<Null>{str};
+    if (str.size() == 0 || str[0] != 'n') return NestedType {str};
+    else return JSON<Null> {str};
   }
 
   operator bool() const {
@@ -508,7 +509,7 @@ struct JSON<MapOf<T>>: public std::unordered_map<std::string, IdempotentJSONTag_
       }
       stripWhitespace(json, 1);
 
-      MapType::emplace(std::piecewise_construct, std::forward_as_tuple(std::move(key)), std::forward_as_tuple(json));
+      newContents.emplace(std::piecewise_construct, std::forward_as_tuple(std::move(key)), std::forward_as_tuple(json));
 
       //look for comma 
       stripWhitespace(json);

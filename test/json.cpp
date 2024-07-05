@@ -5,6 +5,7 @@
 #include "utils/json.h"
 
 using namespace MyServer::Utils::JSON;
+using namespace std::string_view_literals;
 
 int main() {
   using Todo = JSON<Pair<"description", std::string>, Pair<"done", bool>, Pair<"due", Nullable<std::string>>>;
@@ -18,7 +19,8 @@ int main() {
   >;
 
   FlatObject test1 {};
-  test1.get<"key1">() = "hello";
+  // test1.get<"key1">() = "hello";
+  test1[Key<"key1">{}] = "hello";
   test1.get<"key2">() = 2.17;
   test1.get<"key3">() = false;
 
@@ -51,8 +53,7 @@ int main() {
   std::string_view raggedJSON = "[[1.23, 4.56], [7.89, 10.11, 12.13]]x";
   JSON<ListOf<ListOf<double>>> ragged {raggedJSON};
   assert(ragged[0][0] == 1.23);
-  //todo
-  assert(fabs(ragged[1][2].contents - 12.13) < 10e-15);
+  assert(fabs(ragged[1][2].contents - 12.13) == 0);
   assert(raggedJSON == "x");
 
   std::string_view flatjson {R"({"key1": "world", "key3": true, "key2": -3.14})"};
@@ -73,10 +74,8 @@ int main() {
   assert(users[0].get<"name">()->contents == "toddler");
   assert(users[1].get<"age">()->contents == 1.0);
 
-  using User = JSON<Pair<"name", std::string>, Pair<"age", double>>;
-  using UserList = JSON<ListOf<User>>;
-
   using UserGroup = JSON<Pair<"exclusive", Nullable<bool>>, Pair<"users", UserList>>;
+
   std::string_view finalBoss {R"(
   [
     {
@@ -99,7 +98,6 @@ int main() {
     }
   ]
   )"};
-
   JSON<ListOf<UserGroup>> bigTest {finalBoss};
 
   assert(!((*bigTest[0].get<"exclusive">())->contents));

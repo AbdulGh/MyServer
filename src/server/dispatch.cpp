@@ -147,7 +147,6 @@ void Dispatch::work(std::stop_token token) {
     for (int awokenClient: clientsWantWrite.take()) {
       pendingNotifications[awokenClient] |= EPOLLOUT;
     }
-
   }
 }
 
@@ -203,7 +202,7 @@ void Dispatch::dispatchRequest(Request&& request, Client& client) {
   }
   else {
     server->workerThreads[dist(eng)].add(
-      Task{
+      Task {
         .destination = &client, .owner = this,
         .sequence = client.incrementSequence(),
         .request = std::move(request),
