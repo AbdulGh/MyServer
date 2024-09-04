@@ -69,6 +69,7 @@ void Server::go(int port) {
     }
     handover(client);
   }
+  Logger::log<Logger::LogLevel::INFO>("Exiting server");
   shutdown();
 }
 
@@ -111,11 +112,9 @@ void Server::shutdown() {
 // we dont do much in the sigint, because any mutex that we might touch could already be locked
 void Server::sigint(int) {
   if (exiting) {
-    Logger::log<Logger::LogLevel::INFO>("Second SIGINT - exiting quick");
     exit(0);
   }
   exiting = true;
-  Logger::log<Logger::LogLevel::INFO>("SIGINT caught - shutting down");
   for (Server* server: servers) {
     if (::shutdown(server->serverfd, SHUT_RDWR) < 0 || close(server->serverfd) < 0) {
       Logger::log<Logger::LogLevel::ERROR>("Error whilst closing serverfd");
