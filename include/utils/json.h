@@ -43,7 +43,6 @@ constexpr std::string takeString(std::string_view& str) {
 namespace MyServer::Utils::JSON {
 
 template <typename Me, typename ContentType>
-requires std::is_default_constructible_v<ContentType>
 struct JSONBase
 {
   ContentType contents;
@@ -55,12 +54,8 @@ struct JSONBase
     return Me::consumeFromJSON(bodysv);
   }()} {}
 
-  JSONBase(const ContentType& other) {
-    contents = other; 
-  }   
-  JSONBase(ContentType&& other) {
-    contents = std::move(other);
-  }   
+  JSONBase(const ContentType& other): contents{other} {}   
+  JSONBase(ContentType&& other): contents{std::move(other)}{}   
 
   JSONBase& operator=(const ContentType& newContents) {
     contents = newContents;
